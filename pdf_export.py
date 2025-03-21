@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import List, Tuple, Optional, Dict, Any
+from typing import List, Tuple, Optional
 
 # Importieren der reportlab-Bibliothek für PDF-Erstellung
 try:

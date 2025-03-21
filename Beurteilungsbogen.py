@@ -980,7 +980,6 @@ class MainWindow(QMainWindow):
             QApplication.instance().quit()
 
 def main() -> None:
-    import multiprocessing; multiprocessing.freeze_support()
     app = QApplication(sys.argv)
     
     # Allgemeine Stylesheet-Einstellungen für die gesamte App
