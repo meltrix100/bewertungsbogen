@@ -221,7 +221,7 @@ class WorkTitleEditDialog(QDialog):
             elif label_text == "Selbstbeurteilung:":  # Ersetzt "Material"
                 layout.addWidget(self.material_edit)
                 self.material_edit.setMinimumHeight(150)  # Deutlich größer
-            elif label_text == "Hat mir gefalle/Nicht gefallen:":  # Ersetzt "Pünktlichkeit"
+            elif label_text == "Hat mir gefallen/Nicht gefallen:":  # Ersetzt "Pünktlichkeit"
                 layout.addWidget(self.puenktlichkeit_edit)
                 self.puenktlichkeit_edit.setMinimumHeight(150)  # Deutlich größer
             elif label_text == "Kommentar:":
