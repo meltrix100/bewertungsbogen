@@ -46,7 +46,7 @@ class WorkTitleEditDialog(QDialog):
         # Neue Labels für Arbeitstitel
         labels = [
             "Arbeitstitel:", "Note:", "Konzept:", "Ausführung:",
-            "Technik:", "Selbstbeurteilung:", "Hat mir gefalle/Nicht gefallen:", "Kommentar:"
+            "Technik:", "Selbstbeurteilung:", "Hat mir gefallen/Nicht gefallen:", "Kommentar:"
         ]
         
         for label_text in labels:
