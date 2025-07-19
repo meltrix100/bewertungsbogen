@@ -478,7 +478,7 @@ class BackupRestoreDialog(QDialog):
     def __init__(self, db_manager: DatabaseManager) -> None:
         super().__init__()
         self.db_manager: DatabaseManager = db_manager
-        self.setWindowTitle("Backup & Wiederherstellung")
+        self.setWindowTitle("Backup && Wiederherstellung")
         self.setMinimumSize(800, 600)
         self.setup_ui()
         self.load_database_info()
@@ -1604,7 +1604,7 @@ class MainWindow(QMainWindow):
         buttons_layout.addWidget(self.manage_classes_button)
         
         # Backup/Restore Button hinzufügen
-        self.backup_restore_button = QPushButton("Backup & Wiederherstellung")
+        self.backup_restore_button = QPushButton("Backup && Wiederherstellung")
         self.backup_restore_button.setMinimumHeight(40)
         self.backup_restore_button.setStyleSheet("background-color: #9C27B0; color: white;")
         self.backup_restore_button.clicked.connect(self.open_backup_restore)
