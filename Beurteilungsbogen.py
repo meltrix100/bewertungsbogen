@@ -23,52 +23,74 @@ except ImportError:
 # ----------------------- Datenbank -----------------------
 class DatabaseManager:
     def __init__(self, db_path: str = "students.db") -> None:
-        self.db_path: str = db_path
-        self.conn: sqlite3.Connection = sqlite3.connect(self.db_path)
-        self.create_tables()
+        try:
+            self.db_path: str = db_path
+            self.conn: sqlite3.Connection = sqlite3.connect(self.db_path)
+            # Aktiviere Foreign Key Constraints
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            self.create_tables()
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Fehler beim Verbinden mit der Datenbank '{db_path}': {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unerwarteter Fehler beim Initialisieren der Datenbank: {str(e)}")
 
     def create_tables(self) -> None:
-        cursor = self.conn.cursor()
-        # Tabelle für Schüler inklusive Zusatzfelder
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS students (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                firstname TEXT NOT NULL,
-                lastname TEXT NOT NULL,
-                class TEXT,
-                soziale_kompetenz TEXT,
-                aktive_mitarbeit TEXT,
-                sauberkeit TEXT,
-                material TEXT,
-                puenktlichkeit TEXT,
-                kommentar TEXT
-            )
-        """)
-        # Tabelle für Arbeitstitel inkl. eigener Zusatzfelder und Note
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS work_titles (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                student_id INTEGER,
-                title TEXT,
-                note TEXT,
-                soziale_kompetenz TEXT,
-                aktive_mitarbeit TEXT,
-                sauberkeit TEXT,
-                material TEXT,
-                puenktlichkeit TEXT,
-                kommentar TEXT,
-                FOREIGN KEY(student_id) REFERENCES students(id)
-            )
-        """)
-        self.conn.commit()
+        try:
+            cursor = self.conn.cursor()
+            # Tabelle für Schüler inklusive Zusatzfelder
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS students (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    firstname TEXT NOT NULL,
+                    lastname TEXT NOT NULL,
+                    class TEXT,
+                    soziale_kompetenz TEXT,
+                    aktive_mitarbeit TEXT,
+                    sauberkeit TEXT,
+                    material TEXT,
+                    puenktlichkeit TEXT,
+                    kommentar TEXT
+                )
+            """)
+            # Tabelle für Arbeitstitel inkl. eigener Zusatzfelder und Note
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS work_titles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    student_id INTEGER,
+                    title TEXT,
+                    note TEXT,
+                    soziale_kompetenz TEXT,
+                    aktive_mitarbeit TEXT,
+                    sauberkeit TEXT,
+                    material TEXT,
+                    puenktlichkeit TEXT,
+                    kommentar TEXT,
+                    FOREIGN KEY(student_id) REFERENCES students(id)
+                )
+            """)
+            self.conn.commit()
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Fehler beim Erstellen der Datenbanktabellen: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unerwarteter Fehler beim Erstellen der Datenbank: {str(e)}")
 
     def add_student(self, firstname: str, lastname: str, klass: str) -> None:
-        cursor = self.conn.cursor()
-        cursor.execute(
-            "INSERT INTO students (firstname, lastname, class) VALUES (?, ?, ?)",
-            (firstname, lastname, klass)
-        )
-        self.conn.commit()
+        try:
+            if not firstname.strip() or not lastname.strip():
+                raise ValueError("Vor- und Nachname dürfen nicht leer sein")
+            
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "INSERT INTO students (firstname, lastname, class) VALUES (?, ?, ?)",
+                (firstname.strip(), lastname.strip(), klass.strip() if klass else None)
+            )
+            self.conn.commit()
+        except sqlite3.IntegrityError as e:
+            raise ValueError(f"Datenbankintegritätsfehler: {str(e)}")
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Datenbankfehler beim Hinzufügen des Schülers: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unerwarteter Fehler beim Hinzufügen des Schülers: {str(e)}")
 
     def update_student_details(
         self, student_id: int, soziale_kompetenz: str, aktive_mitarbeit: str,
@@ -84,26 +106,56 @@ class DatabaseManager:
         self.conn.commit()
 
     def delete_student(self, student_id: int) -> None:
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM work_titles WHERE student_id = ?", (student_id,))
-        cursor.execute("DELETE FROM students WHERE id = ?", (student_id,))
-        self.conn.commit()
+        try:
+            if not isinstance(student_id, int) or student_id <= 0:
+                raise ValueError("Ungültige Schüler-ID")
+            
+            cursor = self.conn.cursor()
+            # Prüfe ob Schüler existiert
+            cursor.execute("SELECT COUNT(*) FROM students WHERE id = ?", (student_id,))
+            if cursor.fetchone()[0] == 0:
+                raise ValueError(f"Schüler mit ID {student_id} nicht gefunden")
+            
+            # Lösche zuerst alle Arbeitstitel
+            cursor.execute("DELETE FROM work_titles WHERE student_id = ?", (student_id,))
+            # Dann den Schüler
+            cursor.execute("DELETE FROM students WHERE id = ?", (student_id,))
+            self.conn.commit()
+        except sqlite3.Error as e:
+            self.conn.rollback()
+            raise RuntimeError(f"Datenbankfehler beim Löschen des Schülers: {str(e)}")
+        except Exception as e:
+            self.conn.rollback()
+            raise RuntimeError(f"Unerwarteter Fehler beim Löschen des Schülers: {str(e)}")
 
     def search_students(self, keyword: str) -> List[Tuple]:
-        cursor = self.conn.cursor()
-        keyword = f"%{keyword}%"
-        cursor.execute("""
-            SELECT id, firstname, lastname, class FROM students
-            WHERE firstname LIKE ? OR lastname LIKE ? 
-            ORDER BY class
-        """, (keyword, keyword))
-        return cursor.fetchall()
+        try:
+            if not keyword or not keyword.strip():
+                return self.get_students()
+            
+            cursor = self.conn.cursor()
+            keyword = f"%{keyword.strip()}%"
+            cursor.execute("""
+                SELECT id, firstname, lastname, class FROM students
+                WHERE firstname LIKE ? OR lastname LIKE ? 
+                ORDER BY class
+            """, (keyword, keyword))
+            return cursor.fetchall()
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Datenbankfehler bei der Schülersuche: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unerwarteter Fehler bei der Schülersuche: {str(e)}")
 
     def get_students(self) -> List[Tuple]:
-        cursor = self.conn.cursor()
-        # Standardmäßig nach Klasse sortieren (class ist Spalte 3)
-        cursor.execute("SELECT id, firstname, lastname, class FROM students ORDER BY class")
-        return cursor.fetchall()
+        try:
+            cursor = self.conn.cursor()
+            # Standardmäßig nach Klasse sortieren (class ist Spalte 3)
+            cursor.execute("SELECT id, firstname, lastname, class FROM students ORDER BY class")
+            return cursor.fetchall()
+        except sqlite3.Error as e:
+            raise RuntimeError(f"Datenbankfehler beim Abrufen der Schüler: {str(e)}")
+        except Exception as e:
+            raise RuntimeError(f"Unerwarteter Fehler beim Abrufen der Schüler: {str(e)}")
 
     def add_work_title(self, student_id: int, title: str, note: str,
                        soziale_kompetenz: str, aktive_mitarbeit: str,
@@ -817,26 +869,36 @@ class StudentDetailDialog(QDialog):
 # ----------------------- MainWindow -----------------------
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
-        super().__init__()
-        self.setWindowTitle("Schülerverwaltung")
-        self.db_manager = DatabaseManager()
-        #self.showFullScreen()  # Jetzt im Vollbildmodus
-        #self.showMaximized()  # Maximiert das Fenster
-        #self.setMinimumSize(1000, 800)  # Minimale Fenstergröße
+        try:
+            super().__init__()
+            self.setWindowTitle("Schülerverwaltung")
+            
+            # Datenbank-Manager initialisieren
+            try:
+                self.db_manager = DatabaseManager()
+            except Exception as e:
+                QMessageBox.critical(None, "Datenbankfehler", 
+                                   f"Fehler beim Initialisieren der Datenbank:\n{str(e)}")
+                raise
+            
+            # Fenstergröße basierend auf Bildschirmauflösung einstellen
+            screen = QApplication.primaryScreen()
+            if screen:
+                screen_geometry = screen.geometry()
+                width = int(screen_geometry.width() * 0.8)  # 80% der Bildschirmbreite
+                height = int(screen_geometry.height() * 0.8) # 80% der Bildschirmhöhe
+                self.resize(width, height)
+                self.setMinimumSize(int(screen_geometry.width() * 0.5), int(screen_geometry.height() * 0.5))
+            else:
+                self.setMinimumSize(600, 600)  # Minimale Fenstergröße als Fallback
 
-        # Fenstergröße basierend auf Bildschirmauflösung einstellen
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_geometry = screen.geometry()
-            width = int(screen_geometry.width() * 0.8)  # 80% der Bildschirmbreite
-            height = int(screen_geometry.height() * 0.8) # 80% der Bildschirmhöhe
-            self.resize(width, height)
-            self.setMinimumSize(int(screen_geometry.width() * 0.5), int(screen_geometry.height() * 0.5))
-        else:
-            self.setMinimumSize(600, 600)  # Minimale Fenstergröße als Fallback
-
-        self.setup_ui()
-        self.load_students()
+            self.setup_ui()
+            self.load_students()
+            
+        except Exception as e:
+            QMessageBox.critical(None, "Initialisierungsfehler", 
+                               f"Fehler beim Initialisieren des Hauptfensters:\n{str(e)}")
+            raise
 
     def setup_ui(self) -> None:
         layout = QVBoxLayout()
@@ -1170,28 +1232,34 @@ class MainWindow(QMainWindow):
             self.class_filter_combo.setCurrentIndex(0)  # "Alle Klassen" auswählen
 
     def load_students(self) -> None:
-        # Sortierung während des Ladens deaktivieren
-        self.student_table.setSortingEnabled(False)
-        
-        # Klassenfilterliste beim ersten Laden der App aktualisieren
-        if not hasattr(self, 'class_filter_initialized'):
-            self.update_class_filter()
-            self.class_filter_initialized = True
-        
-        # Restliche Logik für das Laden von Studenten...
-        students = self.db_manager.get_students()  # Bereits nach Klasse sortiert
-        self.student_table.setRowCount(0)
-        for row_index, student in enumerate(students):
-            self.student_table.insertRow(row_index)
-            # ID wird in versteckte Spalte geladen, wird für Funktionalität benötigt
-            for col_index, value in enumerate(student):
-                self.student_table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
-        
-        # Sortierung wieder aktivieren
-        self.student_table.setSortingEnabled(True)
-        
-        # Standardsortierung nach Klasse (Spalte 3)
-        self.student_table.sortItems(3, Qt.SortOrder.AscendingOrder)
+        try:
+            # Sortierung während des Ladens deaktivieren
+            self.student_table.setSortingEnabled(False)
+            
+            # Klassenfilterliste beim ersten Laden der App aktualisieren
+            if not hasattr(self, 'class_filter_initialized'):
+                self.update_class_filter()
+                self.class_filter_initialized = True
+            
+            # Restliche Logik für das Laden von Studenten...
+            students = self.db_manager.get_students()  # Bereits nach Klasse sortiert
+            self.student_table.setRowCount(0)
+            for row_index, student in enumerate(students):
+                self.student_table.insertRow(row_index)
+                # ID wird in versteckte Spalte geladen, wird für Funktionalität benötigt
+                for col_index, value in enumerate(student):
+                    self.student_table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
+            
+            # Sortierung wieder aktivieren
+            self.student_table.setSortingEnabled(True)
+            
+            # Standardsortierung nach Klasse (Spalte 3)
+            self.student_table.sortItems(3, Qt.SortOrder.AscendingOrder)
+            
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Laden der Schülerdaten:\n{str(e)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Laden der Schülerdaten:\n{str(e)}")
 
     def search_students(self) -> None:
         """Veraltete Methode, wird durch apply_filters ersetzt"""
@@ -1199,109 +1267,180 @@ class MainWindow(QMainWindow):
 
     def apply_filters(self) -> None:
         """Wendet sowohl den Textfilter als auch den Klassenfilter auf die Schülerliste an"""
-        # Sortierung während des Filterns deaktivieren
-        self.student_table.setSortingEnabled(False)
-        
-        keyword = self.search_edit.text().strip()
-        class_filter = self.class_filter_combo.currentText()
-        
-        # Wenn "Alle Klassen" gewählt ist oder leer, dann keine Klassenfilterung
-        if class_filter == "Alle Klassen" or not class_filter:
-            if not keyword:
-                # Weder Name- noch Klassenfilter aktiv
-                students = self.db_manager.get_students()
+        try:
+            # Sortierung während des Filterns deaktivieren
+            self.student_table.setSortingEnabled(False)
+            
+            keyword = self.search_edit.text().strip()
+            class_filter = self.class_filter_combo.currentText()
+            
+            # Wenn "Alle Klassen" gewählt ist oder leer, dann keine Klassenfilterung
+            if class_filter == "Alle Klassen" or not class_filter:
+                if not keyword:
+                    # Weder Name- noch Klassenfilter aktiv
+                    students = self.db_manager.get_students()
+                else:
+                    # Nur Namenfilter aktiv
+                    students = self.db_manager.search_students(keyword)
             else:
-                # Nur Namenfilter aktiv
-                students = self.db_manager.search_students(keyword)
-        else:
-            # Klassenfilter (und optional Namenfilter) aktiv
-            cursor = self.db_manager.conn.cursor()
-            if not keyword:
-                # Nur Klassenfilter
-                cursor.execute("""
-                    SELECT id, firstname, lastname, class FROM students
-                    WHERE class = ? ORDER BY class
-                """, (class_filter,))
-            else:
-                # Klassen- und Namenfilter
-                cursor.execute("""
-                    SELECT id, firstname, lastname, class FROM students
-                    WHERE (firstname LIKE ? OR lastname LIKE ?) AND class = ?
-                    ORDER BY class
-                """, (f"%{keyword}%", f"%{keyword}%", class_filter))
-            students = cursor.fetchall()
-        
-        # Tabelle mit gefilterten Ergebnissen aktualisieren
-        self.student_table.setRowCount(0)
-        for row_index, student in enumerate(students):
-            self.student_table.insertRow(row_index)
-            for col_index, value in enumerate(student):
-                self.student_table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
-                
-        # Sortierung wieder aktivieren
-        self.student_table.setSortingEnabled(True)
-        
-        # Standardsortierung nach Klasse
-        self.student_table.sortItems(3, Qt.SortOrder.AscendingOrder)
+                # Klassenfilter (und optional Namenfilter) aktiv
+                cursor = self.db_manager.conn.cursor()
+                if not keyword:
+                    # Nur Klassenfilter
+                    cursor.execute("""
+                        SELECT id, firstname, lastname, class FROM students
+                        WHERE class = ? ORDER BY class
+                    """, (class_filter,))
+                else:
+                    # Klassen- und Namenfilter
+                    cursor.execute("""
+                        SELECT id, firstname, lastname, class FROM students
+                        WHERE (firstname LIKE ? OR lastname LIKE ?) AND class = ?
+                        ORDER BY class
+                    """, (f"%{keyword}%", f"%{keyword}%", class_filter))
+                students = cursor.fetchall()
+            
+            # Tabelle mit gefilterten Ergebnissen aktualisieren
+            self.student_table.setRowCount(0)
+            for row_index, student in enumerate(students):
+                self.student_table.insertRow(row_index)
+                for col_index, value in enumerate(student):
+                    self.student_table.setItem(row_index, col_index, QTableWidgetItem(str(value)))
+                    
+            # Sortierung wieder aktivieren
+            self.student_table.setSortingEnabled(True)
+            
+            # Standardsortierung nach Klasse
+            self.student_table.sortItems(3, Qt.SortOrder.AscendingOrder)
+            
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Filtern der Schülerdaten:\n{str(e)}")
+            # Bei Datenbankfehler alle Schüler laden
+            try:
+                self.load_students()
+            except Exception:
+                pass
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Filtern:\n{str(e)}")
+            # Bei unbekanntem Fehler alle Schüler laden
+            try:
+                self.load_students()
+            except Exception:
+                pass
 
     # Diese Methode überschreiben, da wir jetzt apply_filters verwenden
     def search_students(self) -> None:
         self.apply_filters()
 
     def delete_student(self) -> None:
-        selected_row = self.student_table.currentRow()
-        if selected_row == -1:
-            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Schüler aus.")
-            return
-        student_id = int(self.student_table.item(selected_row, 0).text())
-        self.db_manager.delete_student(student_id)
-        self.load_students()
+        try:
+            selected_row = self.student_table.currentRow()
+            if selected_row == -1:
+                QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Schüler aus.")
+                return
+            
+            # Bestätigungsdialog
+            student_name = f"{self.student_table.item(selected_row, 1).text()} {self.student_table.item(selected_row, 2).text()}"
+            reply = QMessageBox.question(
+                self, 'Schüler löschen',
+                f"Möchten Sie den Schüler '{student_name}' wirklich löschen?\n\n"
+                f"Alle zugehörigen Arbeitstitel werden ebenfalls gelöscht.\n"
+                f"Diese Aktion kann nicht rückgängig gemacht werden.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                student_id = int(self.student_table.item(selected_row, 0).text())
+                self.db_manager.delete_student(student_id)
+                self.load_students()
+                QMessageBox.information(self, "Erfolg", f"Schüler '{student_name}' wurde erfolgreich gelöscht.")
+                
+        except ValueError as e:
+            QMessageBox.critical(self, "Fehler", f"Ungültige Schüler-ID:\n{str(e)}")
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Löschen des Schülers:\n{str(e)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Löschen:\n{str(e)}")
 
     def open_student_details(self, row: int, column: int) -> None:
-        student_id = int(self.student_table.item(row, 0).text())
-        firstname = self.student_table.item(row, 1).text()
-        lastname = self.student_table.item(row, 2).text()
-        klass = self.student_table.item(row, 3).text()
-        student_data = (student_id, firstname, lastname, klass)
-        dialog = StudentDetailDialog(student_data, self.db_manager)
-        dialog.exec()
-        self.load_students()
+        try:
+            student_id = int(self.student_table.item(row, 0).text())
+            firstname = self.student_table.item(row, 1).text()
+            lastname = self.student_table.item(row, 2).text()
+            klass = self.student_table.item(row, 3).text()
+            student_data = (student_id, firstname, lastname, klass)
+            dialog = StudentDetailDialog(student_data, self.db_manager)
+            dialog.exec()
+            self.load_students()
+        except ValueError as e:
+            QMessageBox.critical(self, "Fehler", f"Ungültige Schülerdaten:\n{str(e)}")
+        except AttributeError as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Zugriff auf Schülerdaten:\n{str(e)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Öffnen der Schülerdetails:\n{str(e)}")
 
     def open_class_management(self) -> None:
         """Öffnet den Klassenverwaltungsdialog"""
-        dialog = ClassManagementDialog(self.db_manager)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            # Hauptansicht nach Änderungen aktualisieren
+        try:
+            dialog = ClassManagementDialog(self.db_manager)
+            dialog.exec()
+            # Nach dem Schließen des Dialogs immer aktualisieren
             self.update_class_filter()
             self.load_students()
-        else:
-            # Auch bei Abbruch aktualisieren, falls Änderungen vorgenommen wurden
-            self.update_class_filter()
-            self.load_students()
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Öffnen der Klassenverwaltung:\n{str(e)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Öffnen der Klassenverwaltung:\n{str(e)}")
 
     # Neue Methode zum Beenden der Anwendung
     def close_application(self) -> None:
-        # Optional: Bestätigungsdialog anzeigen
-        reply = QMessageBox.question(
-            self, 'Bestätigung',
-            "Möchten Sie die Anwendung wirklich beenden?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
+        try:
+            # Optional: Bestätigungsdialog anzeigen
+            reply = QMessageBox.question(
+                self, 'Bestätigung',
+                "Möchten Sie die Anwendung wirklich beenden?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Datenbank sicher schließen
+                try:
+                    self.db_manager.close()
+                except Exception:
+                    pass  # Ignoriere Fehler beim Schließen der DB
+                
+                QApplication.instance().quit()
+        except Exception as e:
+            # Bei Fehlern trotzdem beenden
+            print(f"Fehler beim Beenden der Anwendung: {e}")
             QApplication.instance().quit()
 
 def main() -> None:
-    app = QApplication(sys.argv)
-    
-    # Allgemeine Stylesheet-Einstellungen für die gesamte App
-    app.setStyle('Fusion')  # Modern-aussehender Style
-    
-    window = MainWindow()
-    #window.show()
-    window.showMaximized()  # Maximiert das Fenster
-    sys.exit(app.exec())
+    try:
+        app = QApplication(sys.argv)
+        
+        # Allgemeine Stylesheet-Einstellungen für die gesamte App
+        app.setStyle('Fusion')  # Modern-aussehender Style
+        
+        # Hauptfenster erstellen und anzeigen
+        try:
+            window = MainWindow()
+            window.showMaximized()  # Maximiert das Fenster
+            sys.exit(app.exec())
+        except Exception as e:
+            QMessageBox.critical(None, "Initialisierungsfehler", 
+                               f"Fehler beim Erstellen des Hauptfensters:\n{str(e)}")
+            sys.exit(1)
+            
+    except ImportError as e:
+        print(f"Fehlende Abhängigkeit: {str(e)}")
+        print("Bitte installieren Sie die erforderlichen Pakete mit: pip install PyQt6 reportlab")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Kritischer Fehler beim Starten der Anwendung: {str(e)}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
