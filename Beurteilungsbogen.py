@@ -244,9 +244,9 @@ class ClassManagementDialog(QDialog):
         layout.addWidget(overview_group)
         
         # ====================================================
-        # BEREICH 2: Massenzuweisung
+        # BEREICH 2: Klasse umbenennen
         # ====================================================
-        assignment_group = QGroupBox("Massenzuweisung von Schülern")
+        assignment_group = QGroupBox("Klasse umbenennen")
         assignment_group.setStyleSheet("""
             QGroupBox {
                 font-weight: bold;
