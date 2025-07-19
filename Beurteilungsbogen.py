@@ -1,12 +1,16 @@
 import sys, os, sqlite3
 from typing import List, Tuple, Optional
+import sys
+import os
+import sqlite3
+import datetime
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
-    QDialog, QTextEdit, QGroupBox, QComboBox
+    QDialog, QTextEdit, QGroupBox, QComboBox, QFileDialog, QProgressBar
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
 
 # Importieren der reportlab-Bibliothek für PDF-Erstellung
@@ -239,6 +243,605 @@ class DatabaseManager:
             (class_name,)
         )
         return cursor.fetchall()
+
+    def create_backup(self, backup_path: str) -> None:
+        """Erstellt ein Backup der Datenbank."""
+        try:
+            import shutil
+            import datetime
+            
+            # Stelle sicher, dass der Backup-Pfad existiert
+            backup_dir = os.path.dirname(backup_path)
+            if backup_dir and not os.path.exists(backup_dir):
+                os.makedirs(backup_dir)
+            
+            # Erstelle Backup mit Zeitstempel im Namen falls nicht spezifiziert
+            if not backup_path.endswith('.db'):
+                timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+                backup_path = os.path.join(backup_path, f"students_backup_{timestamp}.db")
+            
+            # Kopiere die Datenbankdatei
+            shutil.copy2(self.db_path, backup_path)
+            
+            # Validiere das Backup
+            self._validate_backup(backup_path)
+            
+        except Exception as e:
+            raise RuntimeError(f"Fehler beim Erstellen des Backups: {str(e)}")
+
+    def restore_backup(self, backup_path: str) -> None:
+        """Stellt die Datenbank aus einem Backup wieder her."""
+        try:
+            import shutil
+            
+            # Validiere das Backup vor der Wiederherstellung
+            if not os.path.exists(backup_path):
+                raise ValueError(f"Backup-Datei nicht gefunden: {backup_path}")
+            
+            self._validate_backup(backup_path)
+            
+            # Schließe die aktuelle Verbindung
+            self.conn.close()
+            
+            # Erstelle Sicherheitskopie der aktuellen DB
+            current_backup = f"{self.db_path}.before_restore"
+            shutil.copy2(self.db_path, current_backup)
+            
+            try:
+                # Überschreibe die aktuelle Datenbank mit dem Backup
+                shutil.copy2(backup_path, self.db_path)
+                
+                # Neue Verbindung zur wiederhergestellten Datenbank
+                self.conn = sqlite3.connect(self.db_path)
+                self.conn.execute("PRAGMA foreign_keys = ON")
+                
+                # Validiere die wiederhergestellte Datenbank
+                self._validate_database_structure()
+                
+            except Exception as e:
+                # Bei Fehler: Ursprüngliche Datenbank wiederherstellen
+                shutil.copy2(current_backup, self.db_path)
+                self.conn = sqlite3.connect(self.db_path)
+                self.conn.execute("PRAGMA foreign_keys = ON")
+                raise RuntimeError(f"Fehler beim Wiederherstellen. Original wiederhergestellt: {str(e)}")
+            finally:
+                # Lösche die Sicherheitskopie
+                if os.path.exists(current_backup):
+                    os.remove(current_backup)
+                    
+        except Exception as e:
+            raise RuntimeError(f"Fehler bei der Wiederherstellung: {str(e)}")
+
+    def _validate_backup(self, backup_path: str) -> None:
+        """Validiert ein Backup auf Vollständigkeit und Integrität."""
+        try:
+            # Teste Verbindung zum Backup
+            test_conn = sqlite3.connect(backup_path)
+            cursor = test_conn.cursor()
+            
+            # Prüfe ob alle erforderlichen Tabellen existieren
+            cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            tables = [row[0] for row in cursor.fetchall()]
+            
+            required_tables = ['students', 'work_titles']
+            for table in required_tables:
+                if table not in tables:
+                    raise ValueError(f"Erforderliche Tabelle '{table}' im Backup nicht gefunden")
+            
+            # Prüfe Datenbankintegrität
+            cursor.execute("PRAGMA integrity_check")
+            integrity_result = cursor.fetchone()[0]
+            if integrity_result != "ok":
+                raise ValueError(f"Backup-Integrität fehlgeschlagen: {integrity_result}")
+            
+            test_conn.close()
+            
+        except sqlite3.Error as e:
+            raise ValueError(f"Backup-Validierung fehlgeschlagen: {str(e)}")
+
+    def _validate_database_structure(self) -> None:
+        """Validiert die Struktur der aktuellen Datenbank."""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Prüfe students Tabelle
+            cursor.execute("PRAGMA table_info(students)")
+            students_columns = [row[1] for row in cursor.fetchall()]
+            required_student_columns = [
+                'id', 'firstname', 'lastname', 'class', 'soziale_kompetenz',
+                'aktive_mitarbeit', 'sauberkeit', 'material', 'puenktlichkeit', 'kommentar'
+            ]
+            for col in required_student_columns:
+                if col not in students_columns:
+                    raise ValueError(f"Spalte '{col}' in Tabelle 'students' fehlt")
+            
+            # Prüfe work_titles Tabelle
+            cursor.execute("PRAGMA table_info(work_titles)")
+            work_titles_columns = [row[1] for row in cursor.fetchall()]
+            required_work_columns = [
+                'id', 'student_id', 'title', 'note', 'soziale_kompetenz',
+                'aktive_mitarbeit', 'sauberkeit', 'material', 'puenktlichkeit', 'kommentar'
+            ]
+            for col in required_work_columns:
+                if col not in work_titles_columns:
+                    raise ValueError(f"Spalte '{col}' in Tabelle 'work_titles' fehlt")
+                    
+        except sqlite3.Error as e:
+            raise ValueError(f"Datenbankstruktur-Validierung fehlgeschlagen: {str(e)}")
+
+    def get_database_info(self) -> dict:
+        """Gibt Informationen über die Datenbank zurück."""
+        try:
+            cursor = self.conn.cursor()
+            
+            # Anzahl Schüler
+            cursor.execute("SELECT COUNT(*) FROM students")
+            student_count = cursor.fetchone()[0]
+            
+            # Anzahl Arbeitstitel
+            cursor.execute("SELECT COUNT(*) FROM work_titles")
+            work_title_count = cursor.fetchone()[0]
+            
+            # Anzahl Klassen
+            cursor.execute("SELECT COUNT(DISTINCT class) FROM students WHERE class IS NOT NULL AND class != ''")
+            class_count = cursor.fetchone()[0]
+            
+            # Dateigröße
+            db_size = os.path.getsize(self.db_path) if os.path.exists(self.db_path) else 0
+            
+            # Letzte Änderung
+            last_modified = datetime.datetime.fromtimestamp(
+                os.path.getmtime(self.db_path)
+            ).strftime("%d.%m.%Y %H:%M:%S") if os.path.exists(self.db_path) else "Unbekannt"
+            
+            return {
+                'students': student_count,
+                'work_titles': work_title_count,
+                'classes': class_count,
+                'file_size': f"{db_size / 1024:.1f} KB",
+                'last_modified': last_modified,
+                'db_path': self.db_path
+            }
+            
+        except Exception as e:
+            raise RuntimeError(f"Fehler beim Abrufen der Datenbank-Informationen: {str(e)}")
+
+    def export_to_json(self, export_path: str) -> None:
+        """Exportiert alle Daten als JSON-Datei."""
+        try:
+            import json
+            import datetime
+            
+            cursor = self.conn.cursor()
+            
+            # Alle Schülerdaten abrufen
+            cursor.execute("""
+                SELECT id, firstname, lastname, class, soziale_kompetenz, aktive_mitarbeit,
+                       sauberkeit, material, puenktlichkeit, kommentar FROM students
+            """)
+            students_data = []
+            for row in cursor.fetchall():
+                students_data.append({
+                    'id': row[0],
+                    'firstname': row[1],
+                    'lastname': row[2],
+                    'class': row[3],
+                    'soziale_kompetenz': row[4],
+                    'aktive_mitarbeit': row[5],
+                    'sauberkeit': row[6],
+                    'material': row[7],
+                    'puenktlichkeit': row[8],
+                    'kommentar': row[9]
+                })
+            
+            # Alle Arbeitstitel abrufen
+            cursor.execute("""
+                SELECT id, student_id, title, note, soziale_kompetenz, aktive_mitarbeit,
+                       sauberkeit, material, puenktlichkeit, kommentar FROM work_titles
+            """)
+            work_titles_data = []
+            for row in cursor.fetchall():
+                work_titles_data.append({
+                    'id': row[0],
+                    'student_id': row[1],
+                    'title': row[2],
+                    'note': row[3],
+                    'soziale_kompetenz': row[4],
+                    'aktive_mitarbeit': row[5],
+                    'sauberkeit': row[6],
+                    'material': row[7],
+                    'puenktlichkeit': row[8],
+                    'kommentar': row[9]
+                })
+            
+            # Erstelle Export-Datenstruktur
+            export_data = {
+                'metadata': {
+                    'export_date': datetime.datetime.now().isoformat(),
+                    'database_path': self.db_path,
+                    'student_count': len(students_data),
+                    'work_title_count': len(work_titles_data)
+                },
+                'students': students_data,
+                'work_titles': work_titles_data
+            }
+            
+            # Schreibe JSON-Datei
+            with open(export_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, ensure_ascii=False, indent=2)
+                
+        except Exception as e:
+            raise RuntimeError(f"Fehler beim JSON-Export: {str(e)}")
+
+# ----------------------- BackupRestoreDialog -----------------------
+class BackupRestoreDialog(QDialog):
+    def __init__(self, db_manager: DatabaseManager) -> None:
+        super().__init__()
+        self.db_manager: DatabaseManager = db_manager
+        self.setWindowTitle("Backup & Wiederherstellung")
+        self.setMinimumSize(800, 600)
+        self.setup_ui()
+        self.load_database_info()
+
+    def setup_ui(self) -> None:
+        layout = QVBoxLayout()
+        
+        # Größere Schrift für Labels
+        font = QFont()
+        font.setPointSize(12)
+        
+        # ====================================================
+        # BEREICH 1: Datenbank-Informationen
+        # ====================================================
+        info_group = QGroupBox("Datenbank-Informationen")
+        info_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #4CAF50;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0FFF0;
+            }
+        """)
+        
+        info_layout = QVBoxLayout(info_group)
+        
+        # Informationsanzeige
+        self.info_label = QLabel()
+        self.info_label.setFont(font)
+        self.info_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
+        self.info_label.setWordWrap(True)
+        info_layout.addWidget(self.info_label)
+        
+        # Aktualisieren-Button
+        self.refresh_info_button = QPushButton("Informationen aktualisieren")
+        self.refresh_info_button.setMinimumHeight(35)
+        self.refresh_info_button.clicked.connect(self.load_database_info)
+        info_layout.addWidget(self.refresh_info_button)
+        
+        layout.addWidget(info_group)
+        
+        # ====================================================
+        # BEREICH 2: Backup erstellen
+        # ====================================================
+        backup_group = QGroupBox("Backup erstellen")
+        backup_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #2196F3;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0F8FF;
+            }
+        """)
+        
+        backup_layout = QVBoxLayout(backup_group)
+        
+        # Backup-Pfad auswählen
+        backup_path_layout = QHBoxLayout()
+        self.backup_path_edit = QLineEdit()
+        self.backup_path_edit.setMinimumHeight(35)
+        self.backup_path_edit.setPlaceholderText("Backup-Pfad auswählen...")
+        self.backup_path_edit.setReadOnly(True)
+        backup_path_layout.addWidget(self.backup_path_edit)
+        
+        self.browse_backup_button = QPushButton("Durchsuchen...")
+        self.browse_backup_button.setMinimumHeight(35)
+        self.browse_backup_button.clicked.connect(self.browse_backup_path)
+        backup_path_layout.addWidget(self.browse_backup_button)
+        
+        backup_layout.addLayout(backup_path_layout)
+        
+        # Backup-Optionen
+        options_layout = QHBoxLayout()
+        
+        self.create_backup_button = QPushButton("Backup erstellen")
+        self.create_backup_button.setMinimumHeight(45)
+        self.create_backup_button.setFont(font)
+        self.create_backup_button.setStyleSheet("background-color: #2196F3; color: white; font-weight: bold;")
+        self.create_backup_button.clicked.connect(self.create_backup)
+        options_layout.addWidget(self.create_backup_button)
+        
+        self.export_json_button = QPushButton("Als JSON exportieren")
+        self.export_json_button.setMinimumHeight(45)
+        self.export_json_button.setFont(font)
+        self.export_json_button.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
+        self.export_json_button.clicked.connect(self.export_json)
+        options_layout.addWidget(self.export_json_button)
+        
+        backup_layout.addLayout(options_layout)
+        
+        layout.addWidget(backup_group)
+        
+        # ====================================================
+        # BEREICH 3: Backup wiederherstellen
+        # ====================================================
+        restore_group = QGroupBox("Backup wiederherstellen")
+        restore_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #FF5722;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #FFF3E0;
+            }
+        """)
+        
+        restore_layout = QVBoxLayout(restore_group)
+        
+        # Warnung
+        warning_label = QLabel("⚠️ WARNUNG: Das Wiederherstellen überschreibt alle aktuellen Daten!")
+        warning_label.setFont(font)
+        warning_label.setStyleSheet("color: #FF5722; background-color: #FFEBEE; padding: 10px; border-radius: 4px; font-weight: bold;")
+        warning_label.setWordWrap(True)
+        restore_layout.addWidget(warning_label)
+        
+        # Restore-Pfad auswählen
+        restore_path_layout = QHBoxLayout()
+        self.restore_path_edit = QLineEdit()
+        self.restore_path_edit.setMinimumHeight(35)
+        self.restore_path_edit.setPlaceholderText("Backup-Datei auswählen...")
+        self.restore_path_edit.setReadOnly(True)
+        restore_path_layout.addWidget(self.restore_path_edit)
+        
+        self.browse_restore_button = QPushButton("Durchsuchen...")
+        self.browse_restore_button.setMinimumHeight(35)
+        self.browse_restore_button.clicked.connect(self.browse_restore_path)
+        restore_path_layout.addWidget(self.browse_restore_button)
+        
+        restore_layout.addLayout(restore_path_layout)
+        
+        # Restore-Button
+        self.restore_backup_button = QPushButton("Backup wiederherstellen")
+        self.restore_backup_button.setMinimumHeight(45)
+        self.restore_backup_button.setFont(font)
+        self.restore_backup_button.setStyleSheet("background-color: #FF5722; color: white; font-weight: bold;")
+        self.restore_backup_button.clicked.connect(self.restore_backup)
+        restore_layout.addWidget(self.restore_backup_button)
+        
+        layout.addWidget(restore_group)
+        
+        # ====================================================
+        # BEREICH 4: Dialog-Buttons
+        # ====================================================
+        buttons_layout = QHBoxLayout()
+        
+        # Schließen-Button
+        self.close_button = QPushButton("Schließen")
+        self.close_button.setMinimumHeight(40)
+        self.close_button.setFont(font)
+        self.close_button.clicked.connect(self.close)
+        buttons_layout.addWidget(self.close_button)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+
+    def load_database_info(self) -> None:
+        """Lädt und zeigt Datenbank-Informationen an"""
+        try:
+            info = self.db_manager.get_database_info()
+            
+            info_text = f"""
+<b>Datenbank-Status:</b><br>
+• Schüler: {info['students']}<br>
+• Arbeitstitel: {info['work_titles']}<br>
+• Klassen: {info['classes']}<br>
+• Dateigröße: {info['file_size']}<br>
+• Letzte Änderung: {info['last_modified']}<br>
+• Pfad: {info['db_path']}
+            """.strip()
+            
+            self.info_label.setText(info_text)
+            
+        except Exception as e:
+            self.info_label.setText(f"Fehler beim Laden der Datenbank-Informationen:\n{str(e)}")
+
+    def browse_backup_path(self) -> None:
+        """Öffnet Dialog zur Auswahl des Backup-Pfads"""
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"students_backup_{timestamp}.db"
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "Backup speichern unter...",
+                default_filename,
+                "SQLite Datenbank (*.db);;Alle Dateien (*.*)"
+            )
+            
+            if file_path:
+                self.backup_path_edit.setText(file_path)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Auswählen des Backup-Pfads:\n{str(e)}")
+
+    def browse_restore_path(self) -> None:
+        """Öffnet Dialog zur Auswahl der Backup-Datei"""
+        try:
+            file_path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Backup-Datei auswählen...",
+                "",
+                "SQLite Datenbank (*.db);;Alle Dateien (*.*)"
+            )
+            
+            if file_path:
+                self.restore_path_edit.setText(file_path)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Auswählen der Backup-Datei:\n{str(e)}")
+
+    def create_backup(self) -> None:
+        """Erstellt ein Backup der Datenbank"""
+        backup_path = self.backup_path_edit.text().strip()
+        
+        if not backup_path:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Backup-Pfad aus.")
+            return
+        
+        try:
+            # Fortschrittsanzeige (einfach)
+            self.create_backup_button.setEnabled(False)
+            self.create_backup_button.setText("Backup wird erstellt...")
+            
+            # Backup erstellen
+            self.db_manager.create_backup(backup_path)
+            
+            # Erfolgsmeldung
+            QMessageBox.information(
+                self, "Erfolg", 
+                f"Backup wurde erfolgreich erstellt:\n{backup_path}"
+            )
+            
+            # Informationen aktualisieren
+            self.load_database_info()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Erstellen des Backups:\n{str(e)}")
+        finally:
+            self.create_backup_button.setEnabled(True)
+            self.create_backup_button.setText("Backup erstellen")
+
+    def export_json(self) -> None:
+        """Exportiert die Datenbank als JSON"""
+        try:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"students_export_{timestamp}.json"
+            
+            file_path, _ = QFileDialog.getSaveFileName(
+                self,
+                "JSON-Export speichern unter...",
+                default_filename,
+                "JSON Dateien (*.json);;Alle Dateien (*.*)"
+            )
+            
+            if file_path:
+                # Fortschrittsanzeige
+                self.export_json_button.setEnabled(False)
+                self.export_json_button.setText("Export läuft...")
+                
+                # Export durchführen
+                self.db_manager.export_to_json(file_path)
+                
+                # Erfolgsmeldung
+                QMessageBox.information(
+                    self, "Erfolg", 
+                    f"JSON-Export wurde erfolgreich erstellt:\n{file_path}"
+                )
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim JSON-Export:\n{str(e)}")
+        finally:
+            self.export_json_button.setEnabled(True)
+            self.export_json_button.setText("Als JSON exportieren")
+
+    def restore_backup(self) -> None:
+        """Stellt ein Backup wieder her"""
+        restore_path = self.restore_path_edit.text().strip()
+        
+        if not restore_path:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie eine Backup-Datei aus.")
+            return
+        
+        if not os.path.exists(restore_path):
+            QMessageBox.warning(self, "Warnung", "Die ausgewählte Backup-Datei existiert nicht.")
+            return
+        
+        # Doppelte Bestätigung für Wiederherstellung
+        reply = QMessageBox.question(
+            self, 'WARNUNG: Daten überschreiben',
+            "⚠️ ACHTUNG: Diese Aktion überschreibt ALLE aktuellen Daten!\n\n"
+            f"Backup-Datei: {restore_path}\n\n"
+            "Alle aktuellen Schüler, Arbeitstitel und Klassen werden durch die "
+            "Daten aus dem Backup ersetzt.\n\n"
+            "Diese Aktion kann NICHT rückgängig gemacht werden!\n\n"
+            "Möchten Sie wirklich fortfahren?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        
+        # Zweite Bestätigung
+        reply2 = QMessageBox.question(
+            self, 'Letzte Bestätigung',
+            "Sind Sie sich ABSOLUT sicher?\n\n"
+            "Dies ist Ihre letzte Chance, die Wiederherstellung abzubrechen!",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply2 != QMessageBox.StandardButton.Yes:
+            return
+        
+        try:
+            # Fortschrittsanzeige
+            self.restore_backup_button.setEnabled(False)
+            self.restore_backup_button.setText("Wiederherstellung läuft...")
+            
+            # Backup wiederherstellen
+            self.db_manager.restore_backup(restore_path)
+            
+            # Erfolgsmeldung
+            QMessageBox.information(
+                self, "Erfolg", 
+                "Backup wurde erfolgreich wiederhergestellt!\n\n"
+                "Die Anwendung wird nun aktualisiert."
+            )
+            
+            # Informationen aktualisieren
+            self.load_database_info()
+            
+            # Dialog schließen damit Hauptfenster aktualisiert werden kann
+            self.accept()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler bei der Wiederherstellung:\n{str(e)}")
+        finally:
+            self.restore_backup_button.setEnabled(True)
+            self.restore_backup_button.setText("Backup wiederherstellen")
 
 # ----------------------- ClassManagementDialog -----------------------
 class ClassManagementDialog(QDialog):
@@ -1000,6 +1603,13 @@ class MainWindow(QMainWindow):
         self.manage_classes_button.clicked.connect(self.open_class_management)
         buttons_layout.addWidget(self.manage_classes_button)
         
+        # Backup/Restore Button hinzufügen
+        self.backup_restore_button = QPushButton("Backup & Wiederherstellung")
+        self.backup_restore_button.setMinimumHeight(40)
+        self.backup_restore_button.setStyleSheet("background-color: #9C27B0; color: white;")
+        self.backup_restore_button.clicked.connect(self.open_backup_restore)
+        buttons_layout.addWidget(self.backup_restore_button)
+        
         # PDF-Export-Button hinzufügen
         self.export_pdf_button = QPushButton("Export als PDF")
         self.export_pdf_button.setMinimumHeight(40)
@@ -1392,6 +2002,26 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Öffnen der Klassenverwaltung:\n{str(e)}")
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Öffnen der Klassenverwaltung:\n{str(e)}")
+
+    def open_backup_restore(self) -> None:
+        """Öffnet den Backup/Restore-Dialog"""
+        try:
+            dialog = BackupRestoreDialog(self.db_manager)
+            result = dialog.exec()
+            
+            # Nach Wiederherstellung alle Daten neu laden
+            if result == QDialog.DialogCode.Accepted:
+                self.update_class_filter()
+                self.load_students()
+                QMessageBox.information(
+                    self, "Aktualisierung", 
+                    "Die Anwendung wurde nach der Wiederherstellung aktualisiert."
+                )
+                
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Öffnen der Backup-Verwaltung:\n{str(e)}")
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Öffnen der Backup-Verwaltung:\n{str(e)}")
 
     # Neue Methode zum Beenden der Anwendung
     def close_application(self) -> None:

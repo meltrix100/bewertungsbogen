@@ -32,6 +32,14 @@ Ein umfassendes Schülerverwaltungssystem mit PyQt6 für die Verwaltung von Sch�
 - ✅ Professionelle PDF-Formatierung mit reportlab
 - ✅ Automatisches Öffnen der generierten PDFs
 
+### Backup & Datensicherheit
+- ✅ SQLite-Backup-Erstellung mit Zeitstempel
+- ✅ JSON-Export für externe Datenverarbeitung
+- ✅ Sichere Wiederherstellung mit Validierung
+- ✅ Automatische Integritätsprüfung
+- ✅ Rollback-Mechanismus bei Fehlern
+- ✅ Datenbank-Informationsanzeige
+
 ## 🚀 Installation
 
 ### Voraussetzungen
@@ -91,6 +99,20 @@ Das System verwendet SQLite für die Datenspeicherung:
 1. Schüler in der Tabelle auswählen
 2. "Export als PDF" klicken
 3. PDF wird automatisch erstellt und geöffnet
+
+### Backup & Wiederherstellung
+1. "Backup & Wiederherstellung" Button klicken
+2. **Backup erstellen:**
+   - "Durchsuchen..." klicken und Speicherort wählen
+   - "Backup erstellen" ausführen
+3. **JSON-Export:**
+   - "Als JSON exportieren" klicken
+   - Speicherort wählen
+4. **Wiederherstellung:**
+   - ⚠️ WARNUNG: Überschreibt alle aktuellen Daten!
+   - Backup-Datei (.db) auswählen
+   - Beide Bestätigungen geben
+   - Wiederherstellung wird durchgeführt
 
 ## 📁 Projektstruktur
 
