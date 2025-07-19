@@ -50,7 +50,7 @@ if %errorlevel% neq 0 (
 
 echo Erstelle ausführbare Datei mit PyInstaller...
 cd /d "%~dp0"
-pyinstaller --onefile -w Beurteilungsbogen.py
+pyinstaller --onefile --version-file="versioninfo.txt" -w Beurteilungsbogen.py
 echo.
 echo Build abgeschlossen! Die ausführbare Datei befindet sich im "dist"-Verzeichnis.
 pause
