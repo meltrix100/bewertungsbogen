@@ -302,12 +302,12 @@ class ClassManagementDialog(QDialog):
         self.preview_label.setMinimumHeight(60)  # Mindesthöhe für mehrzeiligen Text
         assignment_layout.addWidget(self.preview_label)
         
-        # Button für Massenzuweisung
-        self.mass_assign_button = QPushButton("Massenzuweisung durchführen")
-        self.mass_assign_button.setMinimumHeight(45)
-        self.mass_assign_button.setFont(font)
-        self.mass_assign_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
-        self.mass_assign_button.clicked.connect(self.perform_mass_assignment)
+        # Button für Klasse umbenennen
+        self.rename_class_button = QPushButton("Klasse umbenennen")
+        self.rename_class_button.setMinimumHeight(45)
+        self.rename_class_button.setFont(font)
+        self.rename_class_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.rename_class_button.clicked.connect(self.perform_mass_assignment)
         self.mass_assign_button.setEnabled(False)
         assignment_layout.addWidget(self.mass_assign_button)
         
@@ -391,7 +391,7 @@ class ClassManagementDialog(QDialog):
             self.mass_assign_button.setEnabled(False)
 
     def perform_mass_assignment(self) -> None:
-        """Führt die Massenzuweisung durch"""
+        """Führt die Klasse umbenennen durch"""
         source_class = self.source_class_combo.currentText()
         target_class = self.target_class_edit.text().strip().upper()
         
@@ -425,9 +425,9 @@ class ClassManagementDialog(QDialog):
                 student_list += f"\n... und {student_count - 10} weitere Schüler"
             
             reply = QMessageBox.question(
-                self, 'Massenzuweisung bestätigen',
+                self, 'Klasse umbenennen bestätigen',
                 f"Möchten Sie wirklich {student_count} Schüler von Klasse '{source_class}' "
-                f"zu Klasse '{target_class}' zuweisen?\n\n"
+                f"zu Klasse '{target_class}' umbenennen?\n\n"
                 f"Betroffene Schüler:\n{student_list}\n\n"
                 f"Diese Aktion kann nicht rückgängig gemacht werden.",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -435,7 +435,7 @@ class ClassManagementDialog(QDialog):
             )
             
             if reply == QMessageBox.StandardButton.Yes:
-                # Massenzuweisung durchführen
+                # Klassen umbenennen durchführen
                 affected_rows = self.db_manager.update_students_class(source_class, target_class)
                 
                 # Erfolgsmeldung
@@ -451,7 +451,7 @@ class ClassManagementDialog(QDialog):
                 self.update_student_count_preview()
                 
         except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Fehler bei der Massenzuweisung:\n{str(e)}")
+            QMessageBox.critical(self, "Fehler", f"Fehler bei der Klassenumbenennung:\n{str(e)}")
 
 # ----------------------- WorkTitleEditDialog -----------------------
 class WorkTitleEditDialog(QDialog):
