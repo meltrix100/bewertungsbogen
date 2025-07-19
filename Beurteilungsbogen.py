@@ -159,6 +159,300 @@ class DatabaseManager:
         classes = [row[0] for row in cursor.fetchall() if row[0]]
         return classes
 
+    def get_class_statistics(self) -> List[Tuple[str, int]]:
+        """Gibt eine Liste mit Klassennamen und Schüleranzahl zurück."""
+        cursor = self.conn.cursor()
+        cursor.execute("""
+            SELECT class, COUNT(*) as student_count 
+            FROM students 
+            WHERE class IS NOT NULL AND class != '' 
+            GROUP BY class 
+            ORDER BY class
+        """)
+        return cursor.fetchall()
+
+    def update_students_class(self, old_class: str, new_class: str) -> int:
+        """Weist alle Schüler einer Klasse einer neuen Klasse zu. Gibt die Anzahl der aktualisierten Schüler zurück."""
+        cursor = self.conn.cursor()
+        cursor.execute("UPDATE students SET class = ? WHERE class = ?", (new_class, old_class))
+        affected_rows = cursor.rowcount
+        self.conn.commit()
+        return affected_rows
+
+    def get_students_in_class(self, class_name: str) -> List[Tuple]:
+        """Gibt alle Schüler einer bestimmten Klasse zurück."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, firstname, lastname, class FROM students WHERE class = ? ORDER BY lastname, firstname",
+            (class_name,)
+        )
+        return cursor.fetchall()
+
+# ----------------------- ClassManagementDialog -----------------------
+class ClassManagementDialog(QDialog):
+    def __init__(self, db_manager: DatabaseManager) -> None:
+        super().__init__()
+        self.db_manager: DatabaseManager = db_manager
+        self.setWindowTitle("Klassen bearbeiten")
+        self.setMinimumSize(600, 500)
+        self.setup_ui()
+        self.load_class_overview()
+
+    def setup_ui(self) -> None:
+        layout = QVBoxLayout()
+        
+        # Größere Schrift für Labels
+        font = QFont()
+        font.setPointSize(12)
+        
+        # ====================================================
+        # BEREICH 1: Klassenübersicht
+        # ====================================================
+        overview_group = QGroupBox("Klassenübersicht")
+        overview_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #2196F3;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0F8FF;
+            }
+        """)
+        
+        overview_layout = QVBoxLayout(overview_group)
+        
+        # Tabelle für Klassenübersicht
+        self.class_overview_table = QTableWidget()
+        self.class_overview_table.setColumnCount(2)
+        self.class_overview_table.setHorizontalHeaderLabels(["Klasse", "Anzahl Schüler"])
+        self.class_overview_table.setMinimumHeight(200)
+        self.class_overview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        
+        # Spaltenbreite anpassen
+        header = self.class_overview_table.horizontalHeader()
+        header.setSectionResizeMode(0, header.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
+        
+        overview_layout.addWidget(self.class_overview_table)
+        layout.addWidget(overview_group)
+        
+        # ====================================================
+        # BEREICH 2: Massenzuweisung
+        # ====================================================
+        assignment_group = QGroupBox("Massenzuweisung von Schülern")
+        assignment_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #4CAF50;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0FFF0;
+            }
+        """)
+        
+        assignment_layout = QVBoxLayout(assignment_group)
+        
+        # Quellklasse auswählen
+        source_layout = QHBoxLayout()
+        source_label = QLabel("Von Klasse:")
+        source_label.setFont(font)
+        source_label.setMinimumWidth(120)
+        source_layout.addWidget(source_label)
+        
+        self.source_class_combo = QComboBox()
+        self.source_class_combo.setMinimumHeight(35)
+        self.source_class_combo.currentTextChanged.connect(self.update_student_count_preview)
+        source_layout.addWidget(self.source_class_combo)
+        
+        assignment_layout.addLayout(source_layout)
+        
+        # Zielklasse eingeben
+        target_layout = QHBoxLayout()
+        target_label = QLabel("Zu Klasse:")
+        target_label.setFont(font)
+        target_label.setMinimumWidth(120)
+        target_layout.addWidget(target_label)
+        
+        self.target_class_edit = QLineEdit()
+        self.target_class_edit.setMinimumHeight(35)
+        self.target_class_edit.setPlaceholderText("Neue Klassenbezeichnung eingeben...")
+        target_layout.addWidget(self.target_class_edit)
+        
+        assignment_layout.addLayout(target_layout)
+        
+        # Vorschau der betroffenen Schüler
+        self.preview_label = QLabel("Wählen Sie eine Quellklasse aus.")
+        self.preview_label.setFont(font)
+        self.preview_label.setStyleSheet("color: #666; padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
+        self.preview_label.setWordWrap(True)  # Ermöglicht Textumbruch
+        self.preview_label.setMinimumHeight(60)  # Mindesthöhe für mehrzeiligen Text
+        assignment_layout.addWidget(self.preview_label)
+        
+        # Button für Massenzuweisung
+        self.mass_assign_button = QPushButton("Massenzuweisung durchführen")
+        self.mass_assign_button.setMinimumHeight(45)
+        self.mass_assign_button.setFont(font)
+        self.mass_assign_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.mass_assign_button.clicked.connect(self.perform_mass_assignment)
+        self.mass_assign_button.setEnabled(False)
+        assignment_layout.addWidget(self.mass_assign_button)
+        
+        layout.addWidget(assignment_group)
+        
+        # ====================================================
+        # BEREICH 3: Dialog-Buttons
+        # ====================================================
+        buttons_layout = QHBoxLayout()
+        
+        # Aktualisieren-Button
+        self.refresh_button = QPushButton("Übersicht aktualisieren")
+        self.refresh_button.setMinimumHeight(40)
+        self.refresh_button.setFont(font)
+        self.refresh_button.clicked.connect(self.load_class_overview)
+        buttons_layout.addWidget(self.refresh_button)
+        
+        # Schließen-Button
+        self.close_button = QPushButton("Schließen")
+        self.close_button.setMinimumHeight(40)
+        self.close_button.setFont(font)
+        self.close_button.setStyleSheet("background-color: #FF5555; color: white;")
+        self.close_button.clicked.connect(self.close)
+        buttons_layout.addWidget(self.close_button)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+
+    def load_class_overview(self) -> None:
+        """Lädt die Klassenübersicht mit Schüleranzahl pro Klasse"""
+        try:
+            class_data = self.db_manager.get_class_statistics()
+            
+            # Tabelle aktualisieren
+            self.class_overview_table.setRowCount(0)
+            for row_index, (class_name, count) in enumerate(class_data):
+                self.class_overview_table.insertRow(row_index)
+                self.class_overview_table.setItem(row_index, 0, QTableWidgetItem(str(class_name)))
+                self.class_overview_table.setItem(row_index, 1, QTableWidgetItem(str(count)))
+            
+            # Quellklassen-ComboBox aktualisieren
+            self.source_class_combo.clear()
+            self.source_class_combo.addItem("-- Klasse auswählen --")
+            for class_name, _ in class_data:
+                self.source_class_combo.addItem(class_name)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Klassenübersicht:\n{str(e)}")
+
+    def update_student_count_preview(self) -> None:
+        """Aktualisiert die Vorschau der betroffenen Schüler"""
+        source_class = self.source_class_combo.currentText()
+        
+        if source_class == "-- Klasse auswählen --" or not source_class:
+            self.preview_label.setText("Wählen Sie eine Quellklasse aus.")
+            self.mass_assign_button.setEnabled(False)
+            return
+        
+        try:
+            students_in_class = self.db_manager.get_students_in_class(source_class)
+            count = len(students_in_class)
+            
+            if count == 0:
+                self.preview_label.setText(f"Keine Schüler in Klasse '{source_class}' gefunden.")
+                self.mass_assign_button.setEnabled(False)
+            else:
+                # Zeige auch die Namen der ersten paar Schüler als Vorschau
+                preview_names = [f"{s[1]} {s[2]}" for s in students_in_class[:3]]
+                names_preview = ", ".join(preview_names)
+                if count > 3:
+                    names_preview += f" und {count - 3} weitere"
+                
+                self.preview_label.setText(
+                    f"Es werden {count} Schüler aus Klasse '{source_class}' zugewiesen.\n"
+                    f"Betroffene Schüler: {names_preview}"
+                )
+                self.mass_assign_button.setEnabled(True)
+                
+        except Exception as e:
+            self.preview_label.setText(f"Fehler beim Abrufen der Schüleranzahl: {str(e)}")
+            self.mass_assign_button.setEnabled(False)
+
+    def perform_mass_assignment(self) -> None:
+        """Führt die Massenzuweisung durch"""
+        source_class = self.source_class_combo.currentText()
+        target_class = self.target_class_edit.text().strip().upper()
+        
+        # Eingabevalidierung
+        if source_class == "-- Klasse auswählen --" or not source_class:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie eine Quellklasse aus.")
+            return
+            
+        if not target_class:
+            QMessageBox.warning(self, "Warnung", "Bitte geben Sie eine Zielklasse ein.")
+            return
+            
+        if source_class == target_class:
+            QMessageBox.warning(self, "Warnung", "Quell- und Zielklasse dürfen nicht identisch sein.")
+            return
+        
+        try:
+            # Schüler in der Quellklasse ermitteln
+            students_in_class = self.db_manager.get_students_in_class(source_class)
+            student_count = len(students_in_class)
+            
+            if student_count == 0:
+                QMessageBox.information(self, "Information", 
+                                      f"Keine Schüler in Klasse '{source_class}' gefunden.")
+                return
+            
+            # Bestätigungsdialog mit Schülerliste
+            student_names = [f"• {s[1]} {s[2]}" for s in students_in_class]
+            student_list = "\n".join(student_names[:10])  # Zeige maximal 10 Namen
+            if student_count > 10:
+                student_list += f"\n... und {student_count - 10} weitere Schüler"
+            
+            reply = QMessageBox.question(
+                self, 'Massenzuweisung bestätigen',
+                f"Möchten Sie wirklich {student_count} Schüler von Klasse '{source_class}' "
+                f"zu Klasse '{target_class}' zuweisen?\n\n"
+                f"Betroffene Schüler:\n{student_list}\n\n"
+                f"Diese Aktion kann nicht rückgängig gemacht werden.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply == QMessageBox.StandardButton.Yes:
+                # Massenzuweisung durchführen
+                affected_rows = self.db_manager.update_students_class(source_class, target_class)
+                
+                # Erfolgsmeldung
+                QMessageBox.information(
+                    self, "Erfolg", 
+                    f"Erfolgreich {affected_rows} Schüler von Klasse '{source_class}' "
+                    f"zu Klasse '{target_class}' zugewiesen."
+                )
+                
+                # UI aktualisieren
+                self.target_class_edit.clear()
+                self.load_class_overview()
+                self.update_student_count_preview()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler bei der Massenzuweisung:\n{str(e)}")
+
 # ----------------------- WorkTitleEditDialog -----------------------
 class WorkTitleEditDialog(QDialog):
     def __init__(self, student_id: int, db_manager: DatabaseManager,
@@ -637,6 +931,13 @@ class MainWindow(QMainWindow):
         self.delete_student_button.clicked.connect(self.delete_student)
         buttons_layout.addWidget(self.delete_student_button)
         
+        # Klassen bearbeiten Button hinzufügen
+        self.manage_classes_button = QPushButton("Klassen bearbeiten")
+        self.manage_classes_button.setMinimumHeight(40)
+        self.manage_classes_button.setStyleSheet("background-color: #2196F3; color: white;")
+        self.manage_classes_button.clicked.connect(self.open_class_management)
+        buttons_layout.addWidget(self.manage_classes_button)
+        
         # PDF-Export-Button hinzufügen
         self.export_pdf_button = QPushButton("Export als PDF")
         self.export_pdf_button.setMinimumHeight(40)
@@ -965,6 +1266,18 @@ class MainWindow(QMainWindow):
         dialog = StudentDetailDialog(student_data, self.db_manager)
         dialog.exec()
         self.load_students()
+
+    def open_class_management(self) -> None:
+        """Öffnet den Klassenverwaltungsdialog"""
+        dialog = ClassManagementDialog(self.db_manager)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Hauptansicht nach Änderungen aktualisieren
+            self.update_class_filter()
+            self.load_students()
+        else:
+            # Auch bei Abbruch aktualisieren, falls Änderungen vorgenommen wurden
+            self.update_class_filter()
+            self.load_students()
 
     # Neue Methode zum Beenden der Anwendung
     def close_application(self) -> None:
