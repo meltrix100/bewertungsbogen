@@ -308,8 +308,8 @@ class ClassManagementDialog(QDialog):
         self.rename_class_button.setFont(font)
         self.rename_class_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.rename_class_button.clicked.connect(self.perform_mass_assignment)
-        self.mass_assign_button.setEnabled(False)
-        assignment_layout.addWidget(self.mass_assign_button)
+        self.rename_class_button.setEnabled(False)
+        assignment_layout.addWidget(self.rename_class_button)
         
         layout.addWidget(assignment_group)
         
@@ -363,7 +363,7 @@ class ClassManagementDialog(QDialog):
         
         if source_class == "-- Klasse auswählen --" or not source_class:
             self.preview_label.setText("Wählen Sie eine Quellklasse aus.")
-            self.mass_assign_button.setEnabled(False)
+            self.rename_class_button.setEnabled(False)
             return
         
         try:
@@ -372,7 +372,7 @@ class ClassManagementDialog(QDialog):
             
             if count == 0:
                 self.preview_label.setText(f"Keine Schüler in Klasse '{source_class}' gefunden.")
-                self.mass_assign_button.setEnabled(False)
+                self.rename_class_button.setEnabled(False)
             else:
                 # Zeige auch die Namen der ersten paar Schüler als Vorschau
                 preview_names = [f"{s[1]} {s[2]}" for s in students_in_class[:3]]
@@ -381,14 +381,14 @@ class ClassManagementDialog(QDialog):
                     names_preview += f" und {count - 3} weitere"
                 
                 self.preview_label.setText(
-                    f"Es werden {count} Schüler aus Klasse '{source_class}' zugewiesen.\n"
+                    f"Es werden {count} Schüler aus Klasse '{source_class}' umbenannt.\n"
                     f"Betroffene Schüler: {names_preview}"
                 )
-                self.mass_assign_button.setEnabled(True)
+                self.rename_class_button.setEnabled(True)
                 
         except Exception as e:
             self.preview_label.setText(f"Fehler beim Abrufen der Schüleranzahl: {str(e)}")
-            self.mass_assign_button.setEnabled(False)
+            self.rename_class_button.setEnabled(False)
 
     def perform_mass_assignment(self) -> None:
         """Führt die Klasse umbenennen durch"""
@@ -442,7 +442,7 @@ class ClassManagementDialog(QDialog):
                 QMessageBox.information(
                     self, "Erfolg", 
                     f"Erfolgreich {affected_rows} Schüler von Klasse '{source_class}' "
-                    f"zu Klasse '{target_class}' zugewiesen."
+                    f"zu Klasse '{target_class}' umbenannt."
                 )
                 
                 # UI aktualisieren
