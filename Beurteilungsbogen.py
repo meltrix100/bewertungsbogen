@@ -2573,13 +2573,11 @@ class PDFExportDialog(QDialog):
             from reportlab.lib.colors import lightgrey, black, white
             table = Table(data, colWidths=[5*cm, 11*cm])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (0,-1), lightgrey),
-                ('TEXTCOLOR', (0,0), (0,-1), black),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0,0), (-1,0), 10),
-                ('BOTTOMPADDING', (0,0), (-1,0), 6),
-                ('BACKGROUND', (0,1), (-1,-1), white),
-                ('GRID', (0,0), (-1,-1), 1, black)
+                ('BACKGROUND', (0,0), (-1,-1), white),  # Weißer Hintergrund für alle Zellen
+                ('TEXTCOLOR', (0,0), (-1,-1), black),   # Schwarzer Text für alle Zellen
+                ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),  # Normale Schrift für alle Zellen
+                ('FONTSIZE', (0,0), (-1,-1), 10),       # Gleiche Schriftgröße für alle Zellen
+                ('GRID', (0,0), (-1,-1), 1, black)      # Gitter für alle Zellen
             ]))
             elements.append(Paragraph("<b>Schülerdetails:</b>", heading2_style))
             elements.append(table)
@@ -2602,14 +2600,11 @@ class PDFExportDialog(QDialog):
                 
                 work_table = Table(table_data, colWidths=[5*cm, 11*cm])
                 work_table.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (0,-1), lightgrey),
-                    ('TEXTCOLOR', (0,0), (0,-1), black),
-                    ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0,0), (0,0), 10),
-                    ('BOTTOMPADDING', (0,0), (0,0), 6),
-                    ('BACKGROUND', (0,1), (-1,-1), white),
-                    ('GRID', (0,0), (-1,-1), 1, black),
-                    ('FONTSIZE', (0,1), (-1,-1), 8)
+                    ('BACKGROUND', (0,0), (-1,-1), white),  # Weißer Hintergrund für alle Zellen
+                    ('TEXTCOLOR', (0,0), (-1,-1), black),   # Schwarzer Text für alle Zellen
+                    ('FONTNAME', (0,0), (-1,-1), 'Helvetica'),  # Normale Schrift für alle Zellen
+                    ('FONTSIZE', (0,0), (-1,-1), 10),       # Gleiche Schriftgröße für alle Zellen
+                    ('GRID', (0,0), (-1,-1), 1, black)      # Gitter für alle Zellen
                 ]))
                 elements.append(Paragraph(f"<b>Arbeitstitel:</b>", heading3_style))
                 elements.append(work_table)
