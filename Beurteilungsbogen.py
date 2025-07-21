@@ -9,7 +9,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
     QDialog, QTextEdit, QGroupBox, QComboBox, QFileDialog, QProgressBar,
-    QScrollArea
+    QScrollArea, QSplitter
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -850,16 +850,24 @@ class ClassManagementDialog(QDialog):
         super().__init__()
         self.db_manager: DatabaseManager = db_manager
         self.setWindowTitle("Klassen bearbeiten")
-        self.setMinimumSize(600, 500)
+        
+        # Fenstergröße basierend auf Bildschirmauflösung einstellen
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_geometry = screen.geometry()
+            width = int(screen_geometry.width() * 0.6)   # 60% der Bildschirmbreite
+            height = int(screen_geometry.height() * 0.85) # 85% der Bildschirmhöhe
+            self.resize(width, height)
+            self.setMinimumSize(int(screen_geometry.width() * 0.4), int(screen_geometry.height() * 0.6))
+        else:
+            self.setMinimumSize(800, 700)  # Fallback für größere Mindestgröße
+        
         self.setup_ui()
         self.load_class_overview()
 
     def setup_ui(self) -> None:
-        # Erstelle ein zentrales Widget für den ScrollArea-Inhalt
-        central_widget = QWidget()
-        
-        # Hauptlayout für den gesamten Dialog-Inhalt
-        layout = QVBoxLayout(central_widget)
+        # Hauptlayout für den gesamten Dialog
+        main_layout = QVBoxLayout()
         
         # Größere Schrift für Labels
         font = QFont()
@@ -892,7 +900,7 @@ class ClassManagementDialog(QDialog):
         self.class_overview_table = QTableWidget()
         self.class_overview_table.setColumnCount(2)
         self.class_overview_table.setHorizontalHeaderLabels(["Klasse", "Anzahl Schüler"])
-        self.class_overview_table.setMinimumHeight(200)
+        self.class_overview_table.setMinimumHeight(150)
         self.class_overview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         
         # Spaltenbreite anpassen
@@ -901,18 +909,6 @@ class ClassManagementDialog(QDialog):
         header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)
         
         overview_layout.addWidget(self.class_overview_table)
-        
-        # QScrollArea für den overview_group erstellen
-        overview_scroll = QScrollArea()
-        overview_scroll.setWidget(overview_group)
-        overview_scroll.setWidgetResizable(True)
-        overview_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        overview_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        overview_scroll.setMinimumHeight(250)  # Mindesthöhe für das ScrollArea
-        overview_scroll.setMaximumHeight(400)  # Maximale Höhe vor dem Scrollen
-        
-        # Klassenübersicht (mit ScrollArea) zum Layout hinzufügen
-        layout.addWidget(overview_scroll)
         
         # ====================================================
         # BEREICH 2: Klasse umbenennen
@@ -982,8 +978,6 @@ class ClassManagementDialog(QDialog):
         self.rename_class_button.setEnabled(False)
         assignment_layout.addWidget(self.rename_class_button)
         
-        layout.addWidget(assignment_group)
-        
         # ====================================================
         # BEREICH 3: Klasse löschen
         # ====================================================
@@ -1045,12 +1039,11 @@ class ClassManagementDialog(QDialog):
         self.delete_class_button.setEnabled(False)
         delete_layout.addWidget(self.delete_class_button)
         
-        layout.addWidget(delete_group)
-        
         # ====================================================
         # BEREICH 4: Dialog-Buttons
         # ====================================================
-        buttons_layout = QHBoxLayout()
+        buttons_widget = QWidget()
+        buttons_layout = QHBoxLayout(buttons_widget)
         
         # Aktualisieren-Button
         self.refresh_button = QPushButton("Übersicht aktualisieren")
@@ -1067,22 +1060,39 @@ class ClassManagementDialog(QDialog):
         self.close_button.clicked.connect(self.close)
         buttons_layout.addWidget(self.close_button)
         
-        layout.addLayout(buttons_layout)
+        # ====================================================
+        # QSplitter für verschiebbare Bereiche erstellen
+        # ====================================================
+        # Hauptsplitter (vertikal) für die drei Hauptbereiche
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
+        main_splitter.addWidget(overview_group)
         
-        # QScrollArea für den gesamten Dialog erstellen
-        dialog_scroll = QScrollArea()
-        dialog_scroll.setWidget(central_widget)
-        dialog_scroll.setWidgetResizable(True)
-        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        dialog_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        # Untersplitter für Umbenennen und Löschen (vertikal)
+        operations_splitter = QSplitter(Qt.Orientation.Vertical)
+        operations_splitter.addWidget(assignment_group)
+        operations_splitter.addWidget(delete_group)
         
-        # Dialog-Layout erstellen und ScrollArea hinzufügen
-        dialog_layout = QVBoxLayout()
-        dialog_layout.addWidget(dialog_scroll)
-        dialog_layout.setContentsMargins(0, 0, 0, 0)  # Keine zusätzlichen Ränder
+        # Verhältnis für Umbenennen/Löschen setzen (50/50)
+        operations_splitter.setSizes([300, 300])
+        operations_splitter.setChildrenCollapsible(False)
+        
+        main_splitter.addWidget(operations_splitter)
+        
+        # Anfangsverhältnis der Hauptbereiche setzen (40% Übersicht, 60% Operationen)
+        main_splitter.setSizes([400, 600])
+        main_splitter.setChildrenCollapsible(False)
+        
+        # Mindestgrößen für die Bereiche festlegen
+        overview_group.setMinimumHeight(200)
+        assignment_group.setMinimumHeight(150)
+        delete_group.setMinimumHeight(150)
+        
+        # Hauptlayout zusammensetzen
+        main_layout.addWidget(main_splitter)
+        main_layout.addWidget(buttons_widget)
         
         # Gesamtlayout für den Dialog anwenden
-        self.setLayout(dialog_layout)
+        self.setLayout(main_layout)
 
     def update_student_count_preview(self) -> None:
         """Aktualisiert die Vorschau der betroffenen Schüler"""
@@ -1577,21 +1587,13 @@ class StudentDetailDialog(QDialog):
         self.save_student_button.clicked.connect(self.save_student_details)
         schueler_layout.addWidget(self.save_student_button)
         
-        # QScrollArea für den schueler_group erstellen
-        schueler_scroll = QScrollArea()
-        schueler_scroll.setWidget(schueler_group)
-        schueler_scroll.setWidgetResizable(True)
-        schueler_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        schueler_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        schueler_scroll.setMinimumHeight(300)  # Mindesthöhe für das ScrollArea
-        schueler_scroll.setMaximumHeight(500)  # Maximale Höhe vor dem Scrollen
-        
-        # Schülerdetails (mit ScrollArea) zum Hauptlayout hinzufügen
-        main_layout.addWidget(schueler_scroll)
-        
         # ====================================================
-        # BEREICH 2: Arbeitstitel-Liste
+        # BEREICH 2: Arbeitstitel-Liste + Buttons kombiniert
         # ====================================================
+        arbeitstitel_widget = QWidget()
+        arbeitstitel_main_layout = QVBoxLayout(arbeitstitel_widget)
+        
+        # Arbeitstitel-Liste
         arbeitstitel_group = QGroupBox("Arbeitstitel")
         arbeitstitel_group.setStyleSheet("""
             QGroupBox {
@@ -1638,17 +1640,7 @@ class StudentDetailDialog(QDialog):
         arbeitstitel_layout.setContentsMargins(10, 10, 10, 10)
         arbeitstitel_layout.setSpacing(6)  # Reduzierter Abstand zwischen Elementen
         
-        # QScrollArea für den arbeitstitel_group erstellen
-        arbeitstitel_scroll = QScrollArea()
-        arbeitstitel_scroll.setWidget(arbeitstitel_group)
-        arbeitstitel_scroll.setWidgetResizable(True)
-        arbeitstitel_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        arbeitstitel_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        arbeitstitel_scroll.setMinimumHeight(250)  # Mindesthöhe für das ScrollArea
-        arbeitstitel_scroll.setMaximumHeight(400)  # Maximale Höhe vor dem Scrollen
-        
-        # Arbeitstitel-Bereich (mit ScrollArea) zum Hauptlayout hinzufügen
-        main_layout.addWidget(arbeitstitel_scroll)
+        arbeitstitel_main_layout.addWidget(arbeitstitel_group)
         
         # ====================================================
         # BEREICH 3: Buttons für Arbeitstitel-Verwaltung
@@ -1690,17 +1682,25 @@ class StudentDetailDialog(QDialog):
         buttons_layout.addWidget(self.add_work_title_button)
         buttons_layout.addWidget(self.delete_work_title_button)
         
-        # QScrollArea für den buttons_group erstellen
-        buttons_scroll = QScrollArea()
-        buttons_scroll.setWidget(buttons_group)
-        buttons_scroll.setWidgetResizable(True)
-        buttons_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        buttons_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        buttons_scroll.setMinimumHeight(80)   # Mindesthöhe für das ScrollArea
-        buttons_scroll.setMaximumHeight(120)  # Maximale Höhe vor dem Scrollen
+        arbeitstitel_main_layout.addWidget(buttons_group)
         
-        # Buttons-Bereich (mit ScrollArea) zum Hauptlayout hinzufügen
-        main_layout.addWidget(buttons_scroll)
+        # ====================================================
+        # QSplitter für verschiebbare Bereiche erstellen
+        # ====================================================
+        splitter = QSplitter(Qt.Orientation.Vertical)
+        splitter.addWidget(schueler_group)
+        splitter.addWidget(arbeitstitel_widget)
+        
+        # Anfangsverhältnis der Bereiche setzen (40% Schülerdetails, 60% Arbeitstitel)
+        splitter.setSizes([400, 600])
+        
+        # Mindestgrößen für die Bereiche festlegen
+        splitter.setChildrenCollapsible(False)  # Verhindert vollständiges Ausblenden
+        schueler_group.setMinimumHeight(200)
+        arbeitstitel_widget.setMinimumHeight(200)
+        
+        # Splitter zum Hauptlayout hinzufügen
+        main_layout.addWidget(splitter)
         
         # QScrollArea für den gesamten Dialog erstellen
         dialog_scroll = QScrollArea()
