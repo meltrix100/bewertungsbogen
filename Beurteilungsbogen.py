@@ -2319,9 +2319,15 @@ class PDFExportDialog(QDialog):
             
             # Spaltenbreite anpassen
             header = self.selection_list.horizontalHeader()
-            for i in range(self.selection_list.columnCount()):
-                if not self.selection_list.isColumnHidden(i):
-                    header.setSectionResizeMode(i, header.ResizeMode.Stretch)
+            if self.export_single_radio.isChecked():
+                # Schüler-Modus: Spaltenbreiten gleichmäßig verteilen
+                for i in range(self.selection_list.columnCount()):
+                    if not self.selection_list.isColumnHidden(i):
+                        header.setSectionResizeMode(i, header.ResizeMode.Stretch)
+            else:
+                # Klassen-Modus: Klassenname breiter, Anzahl schmaler
+                header.setSectionResizeMode(0, header.ResizeMode.Stretch)  # Klasse
+                header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)  # Anzahl
                     
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Daten:\n{str(e)}")
