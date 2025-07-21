@@ -480,7 +480,16 @@ class BackupRestoreDialog(QDialog):
         super().__init__()
         self.db_manager: DatabaseManager = db_manager
         self.setWindowTitle("Backup && Wiederherstellung")
-        self.setMinimumSize(800, 600)
+        
+        # Maximize-Button im rechten oberen Eck hinzufügen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        
+        # Fenstergröße setzen
+        initial_size = (800, 600)
+        self.resize(*initial_size)
+        # Mindestgröße entspricht der aktuellen Fenstergröße
+        self.setMinimumSize(*initial_size)
+        
         self.setup_ui()
         self.load_database_info()
 
@@ -1569,8 +1578,16 @@ class WorkTitleEditDialog(QDialog):
         self.db_manager: DatabaseManager = db_manager
         self.work_data: Optional[Tuple] = work_data
         self.setWindowTitle("Arbeitstitel bearbeiten" if work_data else "Neuen Arbeitstitel anlegen")
+        
+        # Maximize-Button im rechten oberen Eck hinzufügen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        
         # Deutlich größeres Fenster
-        self.setMinimumSize(1200, 700)  
+        initial_size = (1200, 700)
+        self.resize(*initial_size)
+        # Mindestgröße entspricht der aktuellen Fenstergröße
+        self.setMinimumSize(*initial_size)
+        
         self.setup_ui()
 
     def setup_ui(self) -> None:
