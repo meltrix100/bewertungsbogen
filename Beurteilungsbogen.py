@@ -851,47 +851,110 @@ class ClassManagementDialog(QDialog):
         self.db_manager: DatabaseManager = db_manager
         self.setWindowTitle("Klassen bearbeiten")
         
-        # Fenstergröße basierend auf Bildschirmauflösung einstellen
-        screen = QApplication.primaryScreen()
-        if screen:
-            screen_geometry = screen.geometry()
-            width = int(screen_geometry.width() * 0.6)   # 60% der Bildschirmbreite
-            height = int(screen_geometry.height() * 0.85) # 85% der Bildschirmhöhe
-            self.resize(width, height)
-            self.setMinimumSize(int(screen_geometry.width() * 0.4), int(screen_geometry.height() * 0.6))
-        else:
-            self.setMinimumSize(800, 700)  # Fallback für größere Mindestgröße
+        # Dynamische Größenanpassung basierend auf Bildschirmauflösung und DPI
+        self._setup_dynamic_sizing()
         
         self.setup_ui()
         self.load_class_overview()
+    
+    def _setup_dynamic_sizing(self) -> None:
+        """Berechnet und setzt die optimale Fenstergröße basierend auf Bildschirm und DPI"""
+        screen = QApplication.primaryScreen()
+        if not screen:
+            # Fallback für sehr kleine Bildschirme
+            self.setMinimumSize(600, 500)
+            self.resize(700, 600)
+            return
+        
+        screen_geometry = screen.geometry()
+        screen_width = screen_geometry.width()
+        screen_height = screen_geometry.height()
+        
+        # DPI-Skalierung berücksichtigen
+        dpi_ratio = screen.devicePixelRatio()
+        logical_dpi = screen.logicalDotsPerInch()
+        
+        # Basis-DPI (typisch 96 DPI bei 100% Skalierung)
+        base_dpi = 96.0
+        dpi_scale_factor = logical_dpi / base_dpi
+        
+        # Kategorisierung der Bildschirmgröße
+        if screen_width <= 1366 and screen_height <= 768:
+            # Kleine Bildschirme (HD, kleine Laptops)
+            width_factor = 0.85
+            height_factor = 0.90
+            min_width_factor = 0.70
+            min_height_factor = 0.75
+        elif screen_width <= 1920 and screen_height <= 1080:
+            # Mittlere Bildschirme (Full HD)
+            width_factor = 0.70
+            height_factor = 0.85
+            min_width_factor = 0.50
+            min_height_factor = 0.65
+        elif screen_width <= 2560 and screen_height <= 1440:
+            # Große Bildschirme (2K)
+            width_factor = 0.60
+            height_factor = 0.80
+            min_width_factor = 0.45
+            min_height_factor = 0.60
+        else:
+            # Sehr große Bildschirme (4K und größer)
+            width_factor = 0.50
+            height_factor = 0.75
+            min_width_factor = 0.40
+            min_height_factor = 0.55
+        
+        # DPI-Skalierung anwenden
+        width_factor *= dpi_scale_factor
+        height_factor *= dpi_scale_factor
+        min_width_factor *= dpi_scale_factor
+        min_height_factor *= dpi_scale_factor
+        
+        # Berechnete Größen mit Grenzen
+        target_width = max(600, min(int(screen_width * width_factor), screen_width - 100))
+        target_height = max(500, min(int(screen_height * height_factor), screen_height - 100))
+        
+        min_width = max(500, int(screen_width * min_width_factor))
+        min_height = max(400, int(screen_height * min_height_factor))
+        
+        # Größen setzen
+        self.resize(target_width, target_height)
+        self.setMinimumSize(min_width, min_height)
+        
+        # Dialog zentrieren
+        x = (screen_width - target_width) // 2
+        y = (screen_height - target_height) // 2
+        self.move(x, y)
 
     def setup_ui(self) -> None:
         # Hauptlayout für den gesamten Dialog
         main_layout = QVBoxLayout()
         
-        # Größere Schrift für Labels
-        font = QFont()
-        font.setPointSize(12)
+        # Dynamische Schriftgröße basierend auf Bildschirmgröße
+        font = self._get_scaled_font()
+        
+        # Dynamische Elementgrößen
+        element_heights = self._get_scaled_element_heights()
         
         # ====================================================
         # BEREICH 1: Klassenübersicht
         # ====================================================
         overview_group = QGroupBox("Klassenübersicht")
-        overview_group.setStyleSheet("""
-            QGroupBox {
+        overview_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: bold;
-                font-size: 14px;
+                font-size: {font.pointSize() + 2}px;
                 border: 2px solid #2196F3;
                 border-radius: 8px;
                 padding-top: 15px;
                 margin-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
                 background-color: #F0F8FF;
-            }
+            }}
         """)
         
         overview_layout = QVBoxLayout(overview_group)
@@ -900,8 +963,11 @@ class ClassManagementDialog(QDialog):
         self.class_overview_table = QTableWidget()
         self.class_overview_table.setColumnCount(2)
         self.class_overview_table.setHorizontalHeaderLabels(["Klasse", "Anzahl Schüler"])
-        self.class_overview_table.setMinimumHeight(150)
+        self.class_overview_table.setMinimumHeight(element_heights['table_min'])
         self.class_overview_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        
+        # Dynamische Schriftgröße für Tabelle
+        self.class_overview_table.setFont(font)
         
         # Spaltenbreite anpassen
         header = self.class_overview_table.horizontalHeader()
@@ -914,21 +980,21 @@ class ClassManagementDialog(QDialog):
         # BEREICH 2: Klasse umbenennen
         # ====================================================
         assignment_group = QGroupBox("Klasse umbenennen")
-        assignment_group.setStyleSheet("""
-            QGroupBox {
+        assignment_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: bold;
-                font-size: 14px;
+                font-size: {font.pointSize() + 2}px;
                 border: 2px solid #4CAF50;
                 border-radius: 8px;
                 padding-top: 15px;
                 margin-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
                 background-color: #F0FFF0;
-            }
+            }}
         """)
         
         assignment_layout = QVBoxLayout(assignment_group)
@@ -937,11 +1003,12 @@ class ClassManagementDialog(QDialog):
         source_layout = QHBoxLayout()
         source_label = QLabel("Von Klasse:")
         source_label.setFont(font)
-        source_label.setMinimumWidth(120)
+        source_label.setMinimumWidth(element_heights['label_width'])
         source_layout.addWidget(source_label)
         
         self.source_class_combo = QComboBox()
-        self.source_class_combo.setMinimumHeight(35)
+        self.source_class_combo.setMinimumHeight(element_heights['input'])
+        self.source_class_combo.setFont(font)
         self.source_class_combo.currentTextChanged.connect(self.update_student_count_preview)
         source_layout.addWidget(self.source_class_combo)
         
@@ -951,11 +1018,12 @@ class ClassManagementDialog(QDialog):
         target_layout = QHBoxLayout()
         target_label = QLabel("Zu Klasse:")
         target_label.setFont(font)
-        target_label.setMinimumWidth(120)
+        target_label.setMinimumWidth(element_heights['label_width'])
         target_layout.addWidget(target_label)
         
         self.target_class_edit = QLineEdit()
-        self.target_class_edit.setMinimumHeight(35)
+        self.target_class_edit.setMinimumHeight(element_heights['input'])
+        self.target_class_edit.setFont(font)
         self.target_class_edit.setPlaceholderText("Neue Klassenbezeichnung eingeben...")
         target_layout.addWidget(self.target_class_edit)
         
@@ -966,12 +1034,12 @@ class ClassManagementDialog(QDialog):
         self.preview_label.setFont(font)
         self.preview_label.setStyleSheet("color: #666; padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
         self.preview_label.setWordWrap(True)  # Ermöglicht Textumbruch
-        self.preview_label.setMinimumHeight(60)  # Mindesthöhe für mehrzeiligen Text
+        self.preview_label.setMinimumHeight(element_heights['preview'])  # Mindesthöhe für mehrzeiligen Text
         assignment_layout.addWidget(self.preview_label)
         
         # Button für Klasse umbenennen
         self.rename_class_button = QPushButton("Klasse umbenennen")
-        self.rename_class_button.setMinimumHeight(45)
+        self.rename_class_button.setMinimumHeight(element_heights['button'])
         self.rename_class_button.setFont(font)
         self.rename_class_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.rename_class_button.clicked.connect(self.perform_mass_assignment)
@@ -982,21 +1050,21 @@ class ClassManagementDialog(QDialog):
         # BEREICH 3: Klasse löschen
         # ====================================================
         delete_group = QGroupBox("Klasse löschen")
-        delete_group.setStyleSheet("""
-            QGroupBox {
+        delete_group.setStyleSheet(f"""
+            QGroupBox {{
                 font-weight: bold;
-                font-size: 14px;
+                font-size: {font.pointSize() + 2}px;
                 border: 2px solid #FF5722;
                 border-radius: 8px;
                 padding-top: 15px;
                 margin-top: 10px;
-            }
-            QGroupBox::title {
+            }}
+            QGroupBox::title {{
                 subcontrol-origin: margin;
                 left: 10px;
                 padding: 0 5px;
                 background-color: #FFEBEE;
-            }
+            }}
         """)
         
         delete_layout = QVBoxLayout(delete_group)
@@ -1012,11 +1080,12 @@ class ClassManagementDialog(QDialog):
         delete_class_layout = QHBoxLayout()
         delete_class_label = QLabel("Klasse löschen:")
         delete_class_label.setFont(font)
-        delete_class_label.setMinimumWidth(120)
+        delete_class_label.setMinimumWidth(element_heights['label_width'])
         delete_class_layout.addWidget(delete_class_label)
         
         self.delete_class_combo = QComboBox()
-        self.delete_class_combo.setMinimumHeight(35)
+        self.delete_class_combo.setMinimumHeight(element_heights['input'])
+        self.delete_class_combo.setFont(font)
         self.delete_class_combo.currentTextChanged.connect(self.update_delete_preview)
         delete_class_layout.addWidget(self.delete_class_combo)
         
@@ -1027,12 +1096,12 @@ class ClassManagementDialog(QDialog):
         self.delete_preview_label.setFont(font)
         self.delete_preview_label.setStyleSheet("color: #666; padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
         self.delete_preview_label.setWordWrap(True)
-        self.delete_preview_label.setMinimumHeight(60)
+        self.delete_preview_label.setMinimumHeight(element_heights['preview'])
         delete_layout.addWidget(self.delete_preview_label)
         
         # Button für Klasse löschen
         self.delete_class_button = QPushButton("Klasse löschen")
-        self.delete_class_button.setMinimumHeight(45)
+        self.delete_class_button.setMinimumHeight(element_heights['button'])
         self.delete_class_button.setFont(font)
         self.delete_class_button.setStyleSheet("background-color: #FF5722; color: white; font-weight: bold;")
         self.delete_class_button.clicked.connect(self.perform_class_deletion)
@@ -1047,14 +1116,14 @@ class ClassManagementDialog(QDialog):
         
         # Aktualisieren-Button
         self.refresh_button = QPushButton("Übersicht aktualisieren")
-        self.refresh_button.setMinimumHeight(40)
+        self.refresh_button.setMinimumHeight(element_heights['button_small'])
         self.refresh_button.setFont(font)
         self.refresh_button.clicked.connect(self.load_class_overview)
         buttons_layout.addWidget(self.refresh_button)
         
         # Schließen-Button
         self.close_button = QPushButton("Schließen")
-        self.close_button.setMinimumHeight(40)
+        self.close_button.setMinimumHeight(element_heights['button_small'])
         self.close_button.setFont(font)
         self.close_button.setStyleSheet("background-color: #FF5555; color: white;")
         self.close_button.clicked.connect(self.close)
@@ -1072,20 +1141,25 @@ class ClassManagementDialog(QDialog):
         operations_splitter.addWidget(assignment_group)
         operations_splitter.addWidget(delete_group)
         
+        # Dynamische Anfangsgrößen basierend auf verfügbarem Platz
+        available_height = self.height() - element_heights['button_small'] - 60  # Platz für Buttons und Ränder
+        overview_height = int(available_height * 0.4)
+        operations_height = int(available_height * 0.6)
+        
         # Verhältnis für Umbenennen/Löschen setzen (50/50)
-        operations_splitter.setSizes([300, 300])
+        operations_splitter.setSizes([operations_height // 2, operations_height // 2])
         operations_splitter.setChildrenCollapsible(False)
         
         main_splitter.addWidget(operations_splitter)
         
-        # Anfangsverhältnis der Hauptbereiche setzen (40% Übersicht, 60% Operationen)
-        main_splitter.setSizes([400, 600])
+        # Anfangsverhältnis der Hauptbereiche setzen
+        main_splitter.setSizes([overview_height, operations_height])
         main_splitter.setChildrenCollapsible(False)
         
-        # Mindestgrößen für die Bereiche festlegen
-        overview_group.setMinimumHeight(200)
-        assignment_group.setMinimumHeight(150)
-        delete_group.setMinimumHeight(150)
+        # Dynamische Mindestgrößen für die Bereiche festlegen
+        overview_group.setMinimumHeight(element_heights['group_min'])
+        assignment_group.setMinimumHeight(element_heights['group_min'])
+        delete_group.setMinimumHeight(element_heights['group_min'])
         
         # Hauptlayout zusammensetzen
         main_layout.addWidget(main_splitter)
@@ -1093,6 +1167,73 @@ class ClassManagementDialog(QDialog):
         
         # Gesamtlayout für den Dialog anwenden
         self.setLayout(main_layout)
+    
+    def _get_scaled_font(self) -> QFont:
+        """Berechnet eine skalierte Schriftgröße basierend auf Bildschirmgröße und DPI"""
+        screen = QApplication.primaryScreen()
+        if not screen:
+            font = QFont()
+            font.setPointSize(10)
+            return font
+        
+        screen_geometry = screen.geometry()
+        screen_height = screen_geometry.height()
+        logical_dpi = screen.logicalDotsPerInch()
+        
+        # Basis-Schriftgröße je nach Bildschirmhöhe
+        if screen_height <= 768:
+            base_size = 9
+        elif screen_height <= 1080:
+            base_size = 10
+        elif screen_height <= 1440:
+            base_size = 11
+        else:
+            base_size = 12
+        
+        # DPI-Anpassung
+        dpi_scale = logical_dpi / 96.0
+        scaled_size = max(8, int(base_size * min(dpi_scale, 1.3)))  # Maximal 30% Vergrößerung durch DPI
+        
+        font = QFont()
+        font.setPointSize(scaled_size)
+        return font
+    
+    def _get_scaled_element_heights(self) -> dict:
+        """Berechnet skalierte Elementhöhen basierend auf Bildschirmgröße"""
+        screen = QApplication.primaryScreen()
+        if not screen:
+            return {
+                'input': 30, 'button': 40, 'button_small': 35, 'preview': 50,
+                'table_min': 120, 'group_min': 150, 'label_width': 100
+            }
+        
+        screen_geometry = screen.geometry()
+        screen_height = screen_geometry.height()
+        logical_dpi = screen.logicalDotsPerInch()
+        
+        # Basis-Skalierungsfaktor
+        if screen_height <= 768:
+            scale = 0.85
+        elif screen_height <= 1080:
+            scale = 1.0
+        elif screen_height <= 1440:
+            scale = 1.15
+        else:
+            scale = 1.3
+        
+        # DPI-Anpassung
+        dpi_scale = logical_dpi / 96.0
+        total_scale = scale * min(dpi_scale, 1.2)  # Maximal 20% DPI-Vergrößerung
+        
+        return {
+            'input': max(25, int(35 * total_scale)),
+            'button': max(35, int(45 * total_scale)),
+            'button_small': max(30, int(40 * total_scale)),
+            'preview': max(40, int(60 * total_scale)),
+            'table_min': max(100, int(150 * total_scale)),
+            'group_min': max(120, int(180 * total_scale)),
+            'label_width': max(80, int(120 * total_scale))
+        }
 
     def update_student_count_preview(self) -> None:
         """Aktualisiert die Vorschau der betroffenen Schüler"""
