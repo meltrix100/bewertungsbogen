@@ -977,7 +977,7 @@ class ClassManagementDialog(QDialog):
         overview_layout.addWidget(self.class_overview_table)
         
         # ====================================================
-        # BEREICH 2: Klasse umbenennen
+        # BEREICH 2: Klasse umbenennen (mit ScrollArea)
         # ====================================================
         assignment_group = QGroupBox("Klasse umbenennen")
         assignment_group.setStyleSheet(f"""
@@ -997,7 +997,19 @@ class ClassManagementDialog(QDialog):
             }}
         """)
         
-        assignment_layout = QVBoxLayout(assignment_group)
+        # Hauptlayout für die Klasse-umbenennen-GroupBox
+        assignment_main_layout = QVBoxLayout(assignment_group)
+        
+        # ScrollArea für die Umbenennen-Eingabefelder
+        assignment_scroll_area = QScrollArea()
+        assignment_scroll_area.setWidgetResizable(True)
+        assignment_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        assignment_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        assignment_scroll_area.setMinimumHeight(element_heights['group_min'])
+        
+        # Widget für den ScrollArea-Inhalt
+        assignment_content_widget = QWidget()
+        assignment_layout = QVBoxLayout(assignment_content_widget)
         
         # Quellklasse auswählen
         source_layout = QHBoxLayout()
@@ -1037,17 +1049,21 @@ class ClassManagementDialog(QDialog):
         self.preview_label.setMinimumHeight(element_heights['preview'])  # Mindesthöhe für mehrzeiligen Text
         assignment_layout.addWidget(self.preview_label)
         
-        # Button für Klasse umbenennen
+        # ScrollArea-Inhalt setzen
+        assignment_scroll_area.setWidget(assignment_content_widget)
+        assignment_main_layout.addWidget(assignment_scroll_area)
+        
+        # Button für Klasse umbenennen außerhalb der ScrollArea
         self.rename_class_button = QPushButton("Klasse umbenennen")
         self.rename_class_button.setMinimumHeight(element_heights['button'])
         self.rename_class_button.setFont(font)
         self.rename_class_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.rename_class_button.clicked.connect(self.perform_mass_assignment)
         self.rename_class_button.setEnabled(False)
-        assignment_layout.addWidget(self.rename_class_button)
+        assignment_main_layout.addWidget(self.rename_class_button)
         
         # ====================================================
-        # BEREICH 3: Klasse löschen
+        # BEREICH 3: Klasse löschen (mit ScrollArea)
         # ====================================================
         delete_group = QGroupBox("Klasse löschen")
         delete_group.setStyleSheet(f"""
@@ -1067,7 +1083,19 @@ class ClassManagementDialog(QDialog):
             }}
         """)
         
-        delete_layout = QVBoxLayout(delete_group)
+        # Hauptlayout für die Klasse-löschen-GroupBox
+        delete_main_layout = QVBoxLayout(delete_group)
+        
+        # ScrollArea für die Lösch-Eingabefelder
+        delete_scroll_area = QScrollArea()
+        delete_scroll_area.setWidgetResizable(True)
+        delete_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        delete_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        delete_scroll_area.setMinimumHeight(element_heights['group_min'])
+        
+        # Widget für den ScrollArea-Inhalt
+        delete_content_widget = QWidget()
+        delete_layout = QVBoxLayout(delete_content_widget)
         
         # Warnung
         delete_warning_label = QLabel("⚠️ WARNUNG: Das Löschen einer Klasse entfernt alle Schüler und deren Arbeitstitel permanent!")
@@ -1099,14 +1127,18 @@ class ClassManagementDialog(QDialog):
         self.delete_preview_label.setMinimumHeight(element_heights['preview'])
         delete_layout.addWidget(self.delete_preview_label)
         
-        # Button für Klasse löschen
+        # ScrollArea-Inhalt setzen
+        delete_scroll_area.setWidget(delete_content_widget)
+        delete_main_layout.addWidget(delete_scroll_area)
+        
+        # Button für Klasse löschen außerhalb der ScrollArea
         self.delete_class_button = QPushButton("Klasse löschen")
         self.delete_class_button.setMinimumHeight(element_heights['button'])
         self.delete_class_button.setFont(font)
         self.delete_class_button.setStyleSheet("background-color: #FF5722; color: white; font-weight: bold;")
         self.delete_class_button.clicked.connect(self.perform_class_deletion)
         self.delete_class_button.setEnabled(False)
-        delete_layout.addWidget(self.delete_class_button)
+        delete_main_layout.addWidget(self.delete_class_button)
         
         # ====================================================
         # BEREICH 4: Dialog-Buttons
@@ -1650,7 +1682,7 @@ class StudentDetailDialog(QDialog):
         self.load_work_titles()
 
     def setup_ui(self) -> None:
-        # Erstelle ein zentrales Widget für den ScrollArea-Inhalt
+        # Erstelle ein zentrales Widget für den gesamten ScrollArea-Inhalt
         central_widget = QWidget()
         
         # Hauptlayout für den gesamten Dialog-Inhalt
@@ -1661,7 +1693,7 @@ class StudentDetailDialog(QDialog):
         font.setPointSize(11)
         
         # ====================================================
-        # BEREICH 1: Schülerdetails (mit eigener ScrollArea)
+        # BEREICH 1: Schülerdetails (ohne eigene ScrollArea)
         # ====================================================
         schueler_group = QGroupBox("Schülerdetails")
         schueler_group.setStyleSheet("""
@@ -1680,19 +1712,8 @@ class StudentDetailDialog(QDialog):
             }
         """)
         
-        # Hauptlayout für die Schülerdetails-GroupBox
-        schueler_main_layout = QVBoxLayout(schueler_group)
-        
-        # ScrollArea für die Schülerdetails-Eingabefelder
-        schueler_scroll_area = QScrollArea()
-        schueler_scroll_area.setWidgetResizable(True)
-        schueler_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        schueler_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        schueler_scroll_area.setMinimumHeight(300)  # Mindesthöhe für bessere Sichtbarkeit
-        
-        # Widget für den ScrollArea-Inhalt
-        schueler_content_widget = QWidget()
-        schueler_layout = QVBoxLayout(schueler_content_widget)
+        # Direktes Layout für die Schülerdetails-GroupBox
+        schueler_layout = QVBoxLayout(schueler_group)
         
         # Erstellen der Eingabefelder für Schülerdetails
         self.soziale_kompetenz_edit = QTextEdit()
@@ -1734,21 +1755,15 @@ class StudentDetailDialog(QDialog):
             field.setMinimumHeight(80)
             schueler_layout.addWidget(field)
         
-        # ScrollArea-Inhalt setzen
-        schueler_scroll_area.setWidget(schueler_content_widget)
-        schueler_main_layout.addWidget(schueler_scroll_area)
-        
-        # Speichern-Button außerhalb der ScrollArea hinzufügen
+        # Speichern-Button direkt hinzufügen
         self.save_student_button = QPushButton("Schülerdaten speichern")
         self.save_student_button.setMinimumHeight(40)
         self.save_student_button.clicked.connect(self.save_student_details)
-        schueler_main_layout.addWidget(self.save_student_button)
+        schueler_layout.addWidget(self.save_student_button)
         
         # ====================================================
         # BEREICH 2: Arbeitstitel-Liste + Buttons kombiniert
         # ====================================================
-        arbeitstitel_widget = QWidget()
-        arbeitstitel_main_layout = QVBoxLayout(arbeitstitel_widget)
         
         # Arbeitstitel-Liste
         arbeitstitel_group = QGroupBox("Arbeitstitel")
@@ -1780,8 +1795,8 @@ class StudentDetailDialog(QDialog):
         # ID-Spalte ausblenden
         self.work_title_table.setColumnHidden(0, True)
         
-        # Tabellengröße reduzieren (von 400px auf 250px)
-        self.work_title_table.setMinimumHeight(200)
+        # Tabellengröße angepasst für besseres Scrolling
+        self.work_title_table.setMinimumHeight(300)
         self.work_title_table.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         
         # Spaltenbreiten optimieren
@@ -1792,12 +1807,6 @@ class StudentDetailDialog(QDialog):
         
         # Tabelle zum Layout hinzufügen
         arbeitstitel_layout.addWidget(self.work_title_table)
-        
-        # Kompaktere Innenabstände für das Layout
-        arbeitstitel_layout.setContentsMargins(10, 10, 10, 10)
-        arbeitstitel_layout.setSpacing(6)  # Reduzierter Abstand zwischen Elementen
-        
-        arbeitstitel_main_layout.addWidget(arbeitstitel_group)
         
         # ====================================================
         # BEREICH 3: Buttons für Arbeitstitel-Verwaltung
@@ -1839,25 +1848,10 @@ class StudentDetailDialog(QDialog):
         buttons_layout.addWidget(self.add_work_title_button)
         buttons_layout.addWidget(self.delete_work_title_button)
         
-        arbeitstitel_main_layout.addWidget(buttons_group)
-        
-        # ====================================================
-        # QSplitter für verschiebbare Bereiche erstellen
-        # ====================================================
-        splitter = QSplitter(Qt.Orientation.Vertical)
-        splitter.addWidget(schueler_group)
-        splitter.addWidget(arbeitstitel_widget)
-        
-        # Anfangsverhältnis der Bereiche setzen (40% Schülerdetails, 60% Arbeitstitel)
-        splitter.setSizes([400, 600])
-        
-        # Mindestgrößen für die Bereiche festlegen
-        splitter.setChildrenCollapsible(False)  # Verhindert vollständiges Ausblenden
-        schueler_group.setMinimumHeight(200)
-        arbeitstitel_widget.setMinimumHeight(200)
-        
-        # Splitter zum Hauptlayout hinzufügen
-        main_layout.addWidget(splitter)
+        # Alle Bereiche direkt zum Hauptlayout hinzufügen (ohne Splitter)
+        main_layout.addWidget(schueler_group)
+        main_layout.addWidget(arbeitstitel_group)
+        main_layout.addWidget(buttons_group)
         
         # QScrollArea für den gesamten Dialog erstellen
         dialog_scroll = QScrollArea()
