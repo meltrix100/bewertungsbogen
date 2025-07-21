@@ -2291,6 +2291,11 @@ class PDFExportDialog(QDialog):
     def load_data(self) -> None:
         """Lädt Schüler oder Klassen je nach Modus"""
         try:
+            # Tabelle komplett zurücksetzen
+            self.selection_list.clear()
+            self.selection_list.setRowCount(0)
+            self.selection_list.setColumnCount(0)
+            
             if self.export_single_radio.isChecked():
                 # Schüler-Modus
                 students = self.db_manager.get_students()
@@ -2306,30 +2311,48 @@ class PDFExportDialog(QDialog):
                 # ID-Spalte ausblenden
                 self.selection_list.setColumnHidden(0, True)
                 
+                # Spaltenbreite für Schüler
+                header = self.selection_list.horizontalHeader()
+                for i in range(self.selection_list.columnCount()):
+                    if not self.selection_list.isColumnHidden(i):
+                        header.setSectionResizeMode(i, header.ResizeMode.Stretch)
+                
             else:
                 # Klassen-Modus
                 class_stats = self.db_manager.get_class_statistics()
+                
+                # Debug: Prüfe was get_class_statistics zurückgibt
+                print(f"Debug - Klassendaten: {class_stats}")
+                
+                # Tabelle für Klassen aufbauen
                 self.selection_list.setColumnCount(2)
                 self.selection_list.setHorizontalHeaderLabels(["Klasse", "Anzahl Schüler"])
                 self.selection_list.setRowCount(len(class_stats))
                 
                 for row, (class_name, count) in enumerate(class_stats):
-                    self.selection_list.setItem(row, 0, QTableWidgetItem(str(class_name)))
-                    self.selection_list.setItem(row, 1, QTableWidgetItem(str(count)))
-            
-            # Spaltenbreite anpassen
-            header = self.selection_list.horizontalHeader()
-            if self.export_single_radio.isChecked():
-                # Schüler-Modus: Spaltenbreiten gleichmäßig verteilen
-                for i in range(self.selection_list.columnCount()):
-                    if not self.selection_list.isColumnHidden(i):
-                        header.setSectionResizeMode(i, header.ResizeMode.Stretch)
-            else:
-                # Klassen-Modus: Klassenname breiter, Anzahl schmaler
+                    print(f"Debug - Zeile {row}: Klasse='{class_name}', Anzahl={count}")
+                    
+                    # Erstelle neue Items
+                    class_item = QTableWidgetItem(str(class_name) if class_name else "KEINE_KLASSE")
+                    count_item = QTableWidgetItem(str(count))
+                    
+                    # Setze Items in die Tabelle
+                    self.selection_list.setItem(row, 0, class_item)
+                    self.selection_list.setItem(row, 1, count_item)
+                
+                # Spaltenbreite für Klassen
+                header = self.selection_list.horizontalHeader()
                 header.setSectionResizeMode(0, header.ResizeMode.Stretch)  # Klasse
                 header.setSectionResizeMode(1, header.ResizeMode.ResizeToContents)  # Anzahl
+            
+            # Tabelle aktualisieren
+            self.selection_list.update()
+            self.selection_list.repaint()
                     
         except Exception as e:
+            print(f"Debug - Fehler beim Laden der Daten: {e}")
+            import traceback
+            traceback.print_exc()
             QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Daten:\n{str(e)}")
 
     def filter_selection(self) -> None:
