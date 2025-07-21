@@ -855,7 +855,11 @@ class ClassManagementDialog(QDialog):
         self.load_class_overview()
 
     def setup_ui(self) -> None:
-        layout = QVBoxLayout()
+        # Erstelle ein zentrales Widget für den ScrollArea-Inhalt
+        central_widget = QWidget()
+        
+        # Hauptlayout für den gesamten Dialog-Inhalt
+        layout = QVBoxLayout(central_widget)
         
         # Größere Schrift für Labels
         font = QFont()
@@ -981,7 +985,70 @@ class ClassManagementDialog(QDialog):
         layout.addWidget(assignment_group)
         
         # ====================================================
-        # BEREICH 3: Dialog-Buttons
+        # BEREICH 3: Klasse löschen
+        # ====================================================
+        delete_group = QGroupBox("Klasse löschen")
+        delete_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #FF5722;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #FFEBEE;
+            }
+        """)
+        
+        delete_layout = QVBoxLayout(delete_group)
+        
+        # Warnung
+        delete_warning_label = QLabel("⚠️ WARNUNG: Das Löschen einer Klasse entfernt alle Schüler und deren Arbeitstitel permanent!")
+        delete_warning_label.setFont(font)
+        delete_warning_label.setStyleSheet("color: #FF5722; background-color: #FFEBEE; padding: 10px; border-radius: 4px; font-weight: bold;")
+        delete_warning_label.setWordWrap(True)
+        delete_layout.addWidget(delete_warning_label)
+        
+        # Klasse zum Löschen auswählen
+        delete_class_layout = QHBoxLayout()
+        delete_class_label = QLabel("Klasse löschen:")
+        delete_class_label.setFont(font)
+        delete_class_label.setMinimumWidth(120)
+        delete_class_layout.addWidget(delete_class_label)
+        
+        self.delete_class_combo = QComboBox()
+        self.delete_class_combo.setMinimumHeight(35)
+        self.delete_class_combo.currentTextChanged.connect(self.update_delete_preview)
+        delete_class_layout.addWidget(self.delete_class_combo)
+        
+        delete_layout.addLayout(delete_class_layout)
+        
+        # Vorschau der zu löschenden Schüler
+        self.delete_preview_label = QLabel("Wählen Sie eine Klasse zum Löschen aus.")
+        self.delete_preview_label.setFont(font)
+        self.delete_preview_label.setStyleSheet("color: #666; padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
+        self.delete_preview_label.setWordWrap(True)
+        self.delete_preview_label.setMinimumHeight(60)
+        delete_layout.addWidget(self.delete_preview_label)
+        
+        # Button für Klasse löschen
+        self.delete_class_button = QPushButton("Klasse löschen")
+        self.delete_class_button.setMinimumHeight(45)
+        self.delete_class_button.setFont(font)
+        self.delete_class_button.setStyleSheet("background-color: #FF5722; color: white; font-weight: bold;")
+        self.delete_class_button.clicked.connect(self.perform_class_deletion)
+        self.delete_class_button.setEnabled(False)
+        delete_layout.addWidget(self.delete_class_button)
+        
+        layout.addWidget(delete_group)
+        
+        # ====================================================
+        # BEREICH 4: Dialog-Buttons
         # ====================================================
         buttons_layout = QHBoxLayout()
         
@@ -1001,28 +1068,21 @@ class ClassManagementDialog(QDialog):
         buttons_layout.addWidget(self.close_button)
         
         layout.addLayout(buttons_layout)
-        self.setLayout(layout)
-
-    def load_class_overview(self) -> None:
-        """Lädt die Klassenübersicht mit Schüleranzahl pro Klasse"""
-        try:
-            class_data = self.db_manager.get_class_statistics()
-            
-            # Tabelle aktualisieren
-            self.class_overview_table.setRowCount(0)
-            for row_index, (class_name, count) in enumerate(class_data):
-                self.class_overview_table.insertRow(row_index)
-                self.class_overview_table.setItem(row_index, 0, QTableWidgetItem(str(class_name)))
-                self.class_overview_table.setItem(row_index, 1, QTableWidgetItem(str(count)))
-            
-            # Quellklassen-ComboBox aktualisieren
-            self.source_class_combo.clear()
-            self.source_class_combo.addItem("-- Klasse auswählen --")
-            for class_name, _ in class_data:
-                self.source_class_combo.addItem(class_name)
-                
-        except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Klassenübersicht:\n{str(e)}")
+        
+        # QScrollArea für den gesamten Dialog erstellen
+        dialog_scroll = QScrollArea()
+        dialog_scroll.setWidget(central_widget)
+        dialog_scroll.setWidgetResizable(True)
+        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        dialog_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Dialog-Layout erstellen und ScrollArea hinzufügen
+        dialog_layout = QVBoxLayout()
+        dialog_layout.addWidget(dialog_scroll)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)  # Keine zusätzlichen Ränder
+        
+        # Gesamtlayout für den Dialog anwenden
+        self.setLayout(dialog_layout)
 
     def update_student_count_preview(self) -> None:
         """Aktualisiert die Vorschau der betroffenen Schüler"""
@@ -1119,6 +1179,195 @@ class ClassManagementDialog(QDialog):
                 
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Fehler bei der Klassenumbenennung:\n{str(e)}")
+
+    def update_delete_preview(self) -> None:
+        """Aktualisiert die Vorschau der zu löschenden Schüler und Arbeitstitel"""
+        delete_class = self.delete_class_combo.currentText()
+        
+        if delete_class == "-- Klasse auswählen --" or not delete_class:
+            self.delete_preview_label.setText("Wählen Sie eine Klasse zum Löschen aus.")
+            self.delete_class_button.setEnabled(False)
+            return
+        
+        try:
+            # Schüler in der Klasse ermitteln
+            students_in_class = self.db_manager.get_students_in_class(delete_class)
+            student_count = len(students_in_class)
+            
+            if student_count == 0:
+                self.delete_preview_label.setText(f"Keine Schüler in Klasse '{delete_class}' gefunden.")
+                self.delete_class_button.setEnabled(False)
+                return
+            
+            # Arbeitstitel zählen
+            total_work_titles = 0
+            for student in students_in_class:
+                student_id = student[0]
+                work_titles = self.db_manager.get_work_titles(student_id)
+                total_work_titles += len(work_titles)
+            
+            # Zeige die ersten paar Schüler als Vorschau
+            preview_names = [f"{s[1]} {s[2]}" for s in students_in_class[:3]]
+            names_preview = ", ".join(preview_names)
+            if student_count > 3:
+                names_preview += f" und {student_count - 3} weitere"
+            
+            self.delete_preview_label.setText(
+                f"🗑️ Es werden {student_count} Schüler und {total_work_titles} Arbeitstitel "
+                f"aus Klasse '{delete_class}' PERMANENT gelöscht!\n\n"
+                f"Betroffene Schüler: {names_preview}\n\n"
+                f"⚠️ Diese Aktion kann NICHT rückgängig gemacht werden!"
+            )
+            self.delete_class_button.setEnabled(True)
+                
+        except Exception as e:
+            self.delete_preview_label.setText(f"Fehler beim Abrufen der Klasseninformationen: {str(e)}")
+            self.delete_class_button.setEnabled(False)
+
+    def perform_class_deletion(self) -> None:
+        """Führt die Klassenlöschung durch"""
+        delete_class = self.delete_class_combo.currentText()
+        
+        # Eingabevalidierung
+        if delete_class == "-- Klasse auswählen --" or not delete_class:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie eine Klasse zum Löschen aus.")
+            return
+        
+        try:
+            # Schüler in der Klasse ermitteln
+            students_in_class = self.db_manager.get_students_in_class(delete_class)
+            student_count = len(students_in_class)
+            
+            if student_count == 0:
+                QMessageBox.information(self, "Information", 
+                                      f"Keine Schüler in Klasse '{delete_class}' gefunden.")
+                return
+            
+            # Arbeitstitel zählen
+            total_work_titles = 0
+            for student in students_in_class:
+                student_id = student[0]
+                work_titles = self.db_manager.get_work_titles(student_id)
+                total_work_titles += len(work_titles)
+            
+            # Detaillierte Schülerliste für Bestätigung
+            student_details = []
+            for student in students_in_class:
+                student_id, vorname, nachname, klasse = student
+                work_titles = self.db_manager.get_work_titles(student_id)
+                work_count = len(work_titles)
+                student_details.append(f"• {vorname} {nachname} ({work_count} Arbeitstitel)")
+            
+            student_list = "\n".join(student_details[:10])  # Zeige maximal 10 Namen
+            if student_count > 10:
+                student_list += f"\n... und {student_count - 10} weitere Schüler"
+            
+            # Erste Sicherheitsabfrage
+            reply1 = QMessageBox.question(
+                self, '⚠️ WARNUNG: Klasse löschen',
+                f"Sie sind dabei, die gesamte Klasse '{delete_class}' zu löschen!\n\n"
+                f"Folgende Daten werden PERMANENT gelöscht:\n"
+                f"• {student_count} Schüler\n"
+                f"• {total_work_titles} Arbeitstitel\n"
+                f"• Alle zugehörigen Bewertungen\n\n"
+                f"Betroffene Schüler:\n{student_list}\n\n"
+                f"⚠️ Diese Aktion kann NICHT rückgängig gemacht werden!\n\n"
+                f"Möchten Sie wirklich fortfahren?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply1 != QMessageBox.StandardButton.Yes:
+                return
+            
+            # Zweite Sicherheitsabfrage
+            reply2 = QMessageBox.question(
+                self, '🔴 LETZTE WARNUNG: Klasse löschen',
+                f"LETZTE BESTÄTIGUNG ERFORDERLICH!\n\n"
+                f"Klasse '{delete_class}' mit {student_count} Schülern und "
+                f"{total_work_titles} Arbeitstiteln wird PERMANENT gelöscht!\n\n"
+                f"Sind Sie absolut sicher, dass Sie fortfahren möchten?\n\n"
+                f"💡 Tipp: Erstellen Sie vorher ein Backup über das Hauptmenü!",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            
+            if reply2 == QMessageBox.StandardButton.Yes:
+                # Klassenlöschung durchführen
+                deleted_work_titles = 0
+                deleted_students = 0
+                
+                # Zuerst alle Arbeitstitel der Schüler in dieser Klasse löschen
+                for student in students_in_class:
+                    student_id = student[0]
+                    work_titles = self.db_manager.get_work_titles(student_id)
+                    for work_title in work_titles:
+                        work_title_id = work_title[0]
+                        self.db_manager.delete_work_title(work_title_id)
+                        deleted_work_titles += 1
+                
+                # Dann alle Schüler in dieser Klasse löschen
+                for student in students_in_class:
+                    student_id = student[0]
+                    self.db_manager.delete_student(student_id)
+                    deleted_students += 1
+                
+                # Erfolgsmeldung
+                QMessageBox.information(
+                    self, "✅ Klasse gelöscht", 
+                    f"Klasse '{delete_class}' wurde erfolgreich gelöscht!\n\n"
+                    f"Gelöscht:\n"
+                    f"• {deleted_students} Schüler\n"
+                    f"• {deleted_work_titles} Arbeitstitel\n\n"
+                    f"Die Klassenübersicht wurde aktualisiert."
+                )
+                
+                # UI aktualisieren
+                self.load_class_overview()
+                self.update_student_count_preview()
+                self.update_delete_preview()
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Löschen der Klasse:\n{str(e)}")
+
+    def load_class_overview(self) -> None:
+        """Lädt die Klassenübersicht mit Schüleranzahl pro Klasse"""
+        try:
+            class_data = self.db_manager.get_class_statistics()
+            
+            # Tabelle aktualisieren
+            self.class_overview_table.setRowCount(0)
+            for row_index, (class_name, count) in enumerate(class_data):
+                self.class_overview_table.insertRow(row_index)
+                self.class_overview_table.setItem(row_index, 0, QTableWidgetItem(str(class_name)))
+                self.class_overview_table.setItem(row_index, 1, QTableWidgetItem(str(count)))
+            
+            # Quellklassen-ComboBox aktualisieren (für Umbenennung)
+            current_source = self.source_class_combo.currentText()
+            self.source_class_combo.clear()
+            self.source_class_combo.addItem("-- Klasse auswählen --")
+            for class_name, _ in class_data:
+                self.source_class_combo.addItem(class_name)
+            # Vorherige Auswahl wiederherstellen, falls möglich
+            if current_source and current_source != "-- Klasse auswählen --":
+                index = self.source_class_combo.findText(current_source)
+                if index >= 0:
+                    self.source_class_combo.setCurrentIndex(index)
+            
+            # Löschklassen-ComboBox aktualisieren
+            current_delete = self.delete_class_combo.currentText()
+            self.delete_class_combo.clear()
+            self.delete_class_combo.addItem("-- Klasse auswählen --")
+            for class_name, _ in class_data:
+                self.delete_class_combo.addItem(class_name)
+            # Vorherige Auswahl wiederherstellen, falls möglich
+            if current_delete and current_delete != "-- Klasse auswählen --":
+                index = self.delete_class_combo.findText(current_delete)
+                if index >= 0:
+                    self.delete_class_combo.setCurrentIndex(index)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Klassenübersicht:\n{str(e)}")
 
 # ----------------------- WorkTitleEditDialog -----------------------
 class WorkTitleEditDialog(QDialog):
