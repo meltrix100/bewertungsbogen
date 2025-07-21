@@ -21,7 +21,9 @@ VSVersionInfo(
           StringStruct(u'OriginalFilename', u'Bewertungsbogen.exe'),
           StringStruct(u'ProductName', u'Bewertungsbogen'),
           StringStruct(u'ProductVersion', u'1.0.0.0'),
-          StringStruct(u'LegalCopyright', u'David J. Melcher')
+          StringStruct(u'LegalCopyright', u'David J. Melcher'),
+          StringStruct(u'Comments', u'Kontakt: melcher.david@gmail.com')
+          StringStruct(u'LegalTrademarks', u'Alle Rechte vorbehalten')
         ]
       )
     ]),
