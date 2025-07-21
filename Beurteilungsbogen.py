@@ -1661,7 +1661,7 @@ class StudentDetailDialog(QDialog):
         font.setPointSize(11)
         
         # ====================================================
-        # BEREICH 1: Schülerdetails
+        # BEREICH 1: Schülerdetails (mit eigener ScrollArea)
         # ====================================================
         schueler_group = QGroupBox("Schülerdetails")
         schueler_group.setStyleSheet("""
@@ -1680,7 +1680,19 @@ class StudentDetailDialog(QDialog):
             }
         """)
         
-        schueler_layout = QVBoxLayout(schueler_group)
+        # Hauptlayout für die Schülerdetails-GroupBox
+        schueler_main_layout = QVBoxLayout(schueler_group)
+        
+        # ScrollArea für die Schülerdetails-Eingabefelder
+        schueler_scroll_area = QScrollArea()
+        schueler_scroll_area.setWidgetResizable(True)
+        schueler_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        schueler_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        schueler_scroll_area.setMinimumHeight(300)  # Mindesthöhe für bessere Sichtbarkeit
+        
+        # Widget für den ScrollArea-Inhalt
+        schueler_content_widget = QWidget()
+        schueler_layout = QVBoxLayout(schueler_content_widget)
         
         # Erstellen der Eingabefelder für Schülerdetails
         self.soziale_kompetenz_edit = QTextEdit()
@@ -1722,11 +1734,15 @@ class StudentDetailDialog(QDialog):
             field.setMinimumHeight(80)
             schueler_layout.addWidget(field)
         
-        # Speichern-Button zum Schülerdetail-Bereich hinzufügen
+        # ScrollArea-Inhalt setzen
+        schueler_scroll_area.setWidget(schueler_content_widget)
+        schueler_main_layout.addWidget(schueler_scroll_area)
+        
+        # Speichern-Button außerhalb der ScrollArea hinzufügen
         self.save_student_button = QPushButton("Schülerdaten speichern")
         self.save_student_button.setMinimumHeight(40)
         self.save_student_button.clicked.connect(self.save_student_details)
-        schueler_layout.addWidget(self.save_student_button)
+        schueler_main_layout.addWidget(self.save_student_button)
         
         # ====================================================
         # BEREICH 2: Arbeitstitel-Liste + Buttons kombiniert
