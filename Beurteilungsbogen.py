@@ -1,8 +1,5 @@
 import sys, os, sqlite3
 from typing import List, Tuple, Optional
-import sys
-import os
-import sqlite3
 import datetime
 
 from PyQt6.QtWidgets import (
@@ -1952,6 +1949,647 @@ class StudentDetailDialog(QDialog):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.load_work_titles()
 
+# ----------------------- PDFExportDialog -----------------------
+class PDFExportDialog(QDialog):
+    def __init__(self, db_manager: DatabaseManager) -> None:
+        super().__init__()
+        self.db_manager: DatabaseManager = db_manager
+        self.setWindowTitle("PDF Export")
+        
+        # Maximize-Button im rechten oberen Eck hinzufügen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        
+        # Fenstergröße setzen
+        initial_size = (900, 700)
+        self.resize(*initial_size)
+        # Mindestgröße entspricht der aktuellen Fenstergröße
+        self.setMinimumSize(*initial_size)
+        
+        self.setup_ui()
+        self.load_data()
+
+    def setup_ui(self) -> None:
+        layout = QVBoxLayout()
+        
+        # Größere Schrift für Labels
+        font = QFont()
+        font.setPointSize(12)
+        
+        # ====================================================
+        # BEREICH 1: Export-Optionen
+        # ====================================================
+        export_options_group = QGroupBox("Export-Optionen")
+        export_options_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #2196F3;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0F8FF;
+            }
+        """)
+        
+        options_layout = QVBoxLayout(export_options_group)
+        
+        # Radiobuttons für Export-Art
+        self.export_single_radio = QPushButton("Einzelne Schüler exportieren")
+        self.export_single_radio.setMinimumHeight(45)
+        self.export_single_radio.setFont(font)
+        self.export_single_radio.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
+        self.export_single_radio.setCheckable(True)
+        self.export_single_radio.setChecked(True)
+        self.export_single_radio.clicked.connect(self.on_export_mode_changed)
+        options_layout.addWidget(self.export_single_radio)
+        
+        self.export_class_radio = QPushButton("Ganze Klassen exportieren")
+        self.export_class_radio.setMinimumHeight(45)
+        self.export_class_radio.setFont(font)
+        self.export_class_radio.setStyleSheet("background-color: #FF9800; color: white; font-weight: bold;")
+        self.export_class_radio.setCheckable(True)
+        self.export_class_radio.clicked.connect(self.on_export_mode_changed)
+        options_layout.addWidget(self.export_class_radio)
+        
+        layout.addWidget(export_options_group)
+        
+        # ====================================================
+        # BEREICH 2: Auswahl (Students oder Classes)
+        # ====================================================
+        self.selection_group = QGroupBox("Schüler auswählen")
+        self.selection_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #4CAF50;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F0FFF0;
+            }
+        """)
+        
+        selection_layout = QVBoxLayout(self.selection_group)
+        
+        # Suchfeld
+        search_layout = QHBoxLayout()
+        search_label = QLabel("Suchen:")
+        search_label.setFont(font)
+        search_layout.addWidget(search_label)
+        
+        self.search_edit = QLineEdit()
+        self.search_edit.setMinimumHeight(35)
+        self.search_edit.setFont(font)
+        self.search_edit.setPlaceholderText("Nach Schüler oder Klasse suchen...")
+        self.search_edit.textChanged.connect(self.filter_selection)
+        search_layout.addWidget(self.search_edit)
+        
+        selection_layout.addLayout(search_layout)
+        
+        # Auswahl-Liste
+        self.selection_list = QTableWidget()
+        self.selection_list.setMinimumHeight(300)
+        self.selection_list.setFont(font)
+        self.selection_list.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.selection_list.setSelectionMode(QTableWidget.SelectionMode.MultiSelection)
+        selection_layout.addWidget(self.selection_list)
+        
+        # Auswahl-Buttons
+        selection_buttons_layout = QHBoxLayout()
+        
+        self.select_all_button = QPushButton("Alle auswählen")
+        self.select_all_button.setMinimumHeight(35)
+        self.select_all_button.setFont(font)
+        self.select_all_button.clicked.connect(self.select_all)
+        selection_buttons_layout.addWidget(self.select_all_button)
+        
+        self.clear_selection_button = QPushButton("Auswahl löschen")
+        self.clear_selection_button.setMinimumHeight(35)
+        self.clear_selection_button.setFont(font)
+        self.clear_selection_button.clicked.connect(self.clear_selection)
+        selection_buttons_layout.addWidget(self.clear_selection_button)
+        
+        selection_layout.addLayout(selection_buttons_layout)
+        layout.addWidget(self.selection_group)
+        
+        # ====================================================
+        # BEREICH 3: Export-Pfad
+        # ====================================================
+        path_group = QGroupBox("Export-Pfad")
+        path_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #FF9800;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #FFF8E1;
+            }
+        """)
+        
+        path_layout = QVBoxLayout(path_group)
+        
+        path_select_layout = QHBoxLayout()
+        self.path_edit = QLineEdit()
+        self.path_edit.setMinimumHeight(35)
+        self.path_edit.setFont(font)
+        self.path_edit.setPlaceholderText("Export-Ordner auswählen...")
+        self.path_edit.setReadOnly(True)
+        path_select_layout.addWidget(self.path_edit)
+        
+        self.browse_path_button = QPushButton("Durchsuchen...")
+        self.browse_path_button.setMinimumHeight(35)
+        self.browse_path_button.setFont(font)
+        self.browse_path_button.clicked.connect(self.browse_export_path)
+        path_select_layout.addWidget(self.browse_path_button)
+        
+        path_layout.addLayout(path_select_layout)
+        layout.addWidget(path_group)
+        
+        # Standard-Export-Pfad setzen (Documents-Ordner)
+        self.set_default_export_path()
+        
+        # ====================================================
+        # BEREICH 4: Export-Status und Buttons
+        # ====================================================
+        status_group = QGroupBox("Export-Status")
+        status_group.setStyleSheet("""
+            QGroupBox {
+                font-weight: bold;
+                font-size: 14px;
+                border: 2px solid #9C27B0;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #F3E5F5;
+            }
+        """)
+        
+        status_layout = QVBoxLayout(status_group)
+        
+        self.status_label = QLabel("Bereit für Export...")
+        self.status_label.setFont(font)
+        self.status_label.setStyleSheet("padding: 10px; background-color: #f9f9f9; border-radius: 4px;")
+        status_layout.addWidget(self.status_label)
+        
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setMinimumHeight(25)
+        self.progress_bar.setVisible(False)
+        status_layout.addWidget(self.progress_bar)
+        
+        layout.addWidget(status_group)
+        
+        # ====================================================
+        # BEREICH 5: Dialog-Buttons
+        # ====================================================
+        buttons_layout = QHBoxLayout()
+        
+        self.export_button = QPushButton("PDF Export starten")
+        self.export_button.setMinimumHeight(50)
+        self.export_button.setFont(font)
+        self.export_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold; font-size: 14px;")
+        self.export_button.clicked.connect(self.start_export)
+        buttons_layout.addWidget(self.export_button)
+        
+        self.close_button = QPushButton("Schließen")
+        self.close_button.setMinimumHeight(50)
+        self.close_button.setFont(font)
+        self.close_button.clicked.connect(self.close)
+        buttons_layout.addWidget(self.close_button)
+        
+        layout.addLayout(buttons_layout)
+        self.setLayout(layout)
+
+    def set_default_export_path(self) -> None:
+        """Setzt den Standard-Export-Pfad auf den Documents-Ordner des Benutzers"""
+        try:
+            # Versuche den Documents-Ordner zu finden
+            if sys.platform == 'win32':
+                # Windows: Verwende USERPROFILE/Documents
+                user_profile = os.environ.get('USERPROFILE', '')
+                if user_profile:
+                    documents_path = os.path.join(user_profile, 'Documents')
+                    if os.path.exists(documents_path):
+                        self.path_edit.setText(documents_path)
+                        return
+                
+                # Fallback: Desktop
+                desktop_path = os.path.join(user_profile, 'Desktop')
+                if os.path.exists(desktop_path):
+                    self.path_edit.setText(desktop_path)
+                    return
+            
+            elif sys.platform == 'darwin':  # macOS
+                # macOS: Verwende ~/Documents
+                home_dir = os.path.expanduser('~')
+                documents_path = os.path.join(home_dir, 'Documents')
+                if os.path.exists(documents_path):
+                    self.path_edit.setText(documents_path)
+                    return
+                
+                # Fallback: Home-Verzeichnis
+                if os.path.exists(home_dir):
+                    self.path_edit.setText(home_dir)
+                    return
+            
+            else:  # Linux/Unix
+                # Linux: Verwende ~/Documents
+                home_dir = os.path.expanduser('~')
+                documents_path = os.path.join(home_dir, 'Documents')
+                if os.path.exists(documents_path):
+                    self.path_edit.setText(documents_path)
+                    return
+                
+                # Fallback: Home-Verzeichnis
+                if os.path.exists(home_dir):
+                    self.path_edit.setText(home_dir)
+                    return
+            
+            # Letzter Fallback: Aktuelles Arbeitsverzeichnis
+            current_dir = os.getcwd()
+            self.path_edit.setText(current_dir)
+            
+        except Exception as e:
+            print(f"Fehler beim Setzen des Standard-Export-Pfads: {e}")
+            # Bei Fehler: Aktuelles Arbeitsverzeichnis verwenden
+            try:
+                current_dir = os.getcwd()
+                self.path_edit.setText(current_dir)
+            except:
+                pass  # Wenn auch das fehlschlägt, bleibt das Feld leer
+
+    def on_export_mode_changed(self) -> None:
+        """Wechselt zwischen Einzelschüler- und Klassen-Export-Modus"""
+        if self.sender() == self.export_single_radio:
+            self.export_single_radio.setChecked(True)
+            self.export_class_radio.setChecked(False)
+            self.selection_group.setTitle("Schüler auswählen")
+            self.selection_group.setStyleSheet("""
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 14px;
+                    border: 2px solid #4CAF50;
+                    border-radius: 8px;
+                    padding-top: 15px;
+                    margin-top: 10px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 5px;
+                    background-color: #F0FFF0;
+                }
+            """)
+        else:
+            self.export_single_radio.setChecked(False)
+            self.export_class_radio.setChecked(True)
+            self.selection_group.setTitle("Klassen auswählen")
+            self.selection_group.setStyleSheet("""
+                QGroupBox {
+                    font-weight: bold;
+                    font-size: 14px;
+                    border: 2px solid #FF9800;
+                    border-radius: 8px;
+                    padding-top: 15px;
+                    margin-top: 10px;
+                }
+                QGroupBox::title {
+                    subcontrol-origin: margin;
+                    left: 10px;
+                    padding: 0 5px;
+                    background-color: #FFF8E1;
+                }
+            """)
+        
+        self.load_data()
+        self.search_edit.setPlaceholderText(
+            "Nach Schüler suchen..." if self.export_single_radio.isChecked() 
+            else "Nach Klasse suchen..."
+        )
+
+    def load_data(self) -> None:
+        """Lädt Schüler oder Klassen je nach Modus"""
+        try:
+            if self.export_single_radio.isChecked():
+                # Schüler-Modus
+                students = self.db_manager.get_students()
+                self.selection_list.setColumnCount(4)
+                self.selection_list.setHorizontalHeaderLabels(["ID", "Vorname", "Nachname", "Klasse"])
+                self.selection_list.setRowCount(len(students))
+                
+                for row, student in enumerate(students):
+                    for col, data in enumerate(student):
+                        item = QTableWidgetItem(str(data) if data else "")
+                        self.selection_list.setItem(row, col, item)
+                
+                # ID-Spalte ausblenden
+                self.selection_list.setColumnHidden(0, True)
+                
+            else:
+                # Klassen-Modus
+                class_stats = self.db_manager.get_class_statistics()
+                self.selection_list.setColumnCount(2)
+                self.selection_list.setHorizontalHeaderLabels(["Klasse", "Anzahl Schüler"])
+                self.selection_list.setRowCount(len(class_stats))
+                
+                for row, (class_name, count) in enumerate(class_stats):
+                    self.selection_list.setItem(row, 0, QTableWidgetItem(str(class_name)))
+                    self.selection_list.setItem(row, 1, QTableWidgetItem(str(count)))
+            
+            # Spaltenbreite anpassen
+            header = self.selection_list.horizontalHeader()
+            for i in range(self.selection_list.columnCount()):
+                if not self.selection_list.isColumnHidden(i):
+                    header.setSectionResizeMode(i, header.ResizeMode.Stretch)
+                    
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Laden der Daten:\n{str(e)}")
+
+    def filter_selection(self) -> None:
+        """Filtert die Auswahl basierend auf der Sucheingabe"""
+        search_text = self.search_edit.text().lower()
+        
+        for row in range(self.selection_list.rowCount()):
+            match = False
+            for col in range(self.selection_list.columnCount()):
+                if not self.selection_list.isColumnHidden(col):
+                    item = self.selection_list.item(row, col)
+                    if item and search_text in item.text().lower():
+                        match = True
+                        break
+            self.selection_list.setRowHidden(row, not match)
+
+    def select_all(self) -> None:
+        """Wählt alle sichtbaren Einträge aus"""
+        self.selection_list.selectAll()
+
+    def clear_selection(self) -> None:
+        """Löscht die aktuelle Auswahl"""
+        self.selection_list.clearSelection()
+
+    def browse_export_path(self) -> None:
+        """Öffnet Dialog zur Auswahl des Export-Pfads"""
+        try:
+            export_dir = QFileDialog.getExistingDirectory(
+                self,
+                "Export-Ordner auswählen",
+                "",
+                QFileDialog.Option.ShowDirsOnly
+            )
+            
+            if export_dir:
+                self.path_edit.setText(export_dir)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Auswählen des Export-Pfads:\n{str(e)}")
+
+    def start_export(self) -> None:
+        """Startet den PDF-Export"""
+        if not REPORTLAB_AVAILABLE:
+            QMessageBox.warning(self, "Fehler", 
+                              "Reportlab-Bibliothek nicht verfügbar. Bitte installieren Sie 'reportlab' mit dem Befehl:\npip install reportlab")
+            return
+        
+        # Prüfe Auswahl
+        selected_rows = self.selection_list.selectionModel().selectedRows()
+        if not selected_rows:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie mindestens einen Eintrag aus.")
+            return
+        
+        # Prüfe Export-Pfad
+        export_path = self.path_edit.text().strip()
+        if not export_path:
+            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Export-Pfad aus.")
+            return
+        
+        try:
+            # Export-Buttons deaktivieren
+            self.export_button.setEnabled(False)
+            self.close_button.setEnabled(False)
+            self.progress_bar.setVisible(True)
+            
+            if self.export_single_radio.isChecked():
+                self.export_selected_students(selected_rows, export_path)
+            else:
+                self.export_selected_classes(selected_rows, export_path)
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Export:\n{str(e)}")
+        finally:
+            # UI wieder aktivieren
+            self.export_button.setEnabled(True)
+            self.close_button.setEnabled(True)
+            self.progress_bar.setVisible(False)
+
+    def export_selected_students(self, selected_rows, export_path: str) -> None:
+        """Exportiert ausgewählte Schüler als einzelne PDFs"""
+        total_students = len(selected_rows)
+        self.progress_bar.setMaximum(total_students)
+        exported_count = 0
+        
+        for i, row_index in enumerate(selected_rows):
+            row = row_index.row()
+            
+            # Schülerdaten abrufen
+            student_id = int(self.selection_list.item(row, 0).text())
+            firstname = self.selection_list.item(row, 1).text()
+            lastname = self.selection_list.item(row, 2).text()
+            klass = self.selection_list.item(row, 3).text() if self.selection_list.item(row, 3) else ""
+            
+            self.status_label.setText(f"Exportiere {firstname} {lastname}...")
+            self.progress_bar.setValue(i)
+            QApplication.processEvents()  # UI aktualisieren
+            
+            try:
+                filename = self.create_student_pdf(student_id, firstname, lastname, klass, export_path)
+                exported_count += 1
+            except Exception as e:
+                print(f"Fehler beim Exportieren von {firstname} {lastname}: {e}")
+                continue
+        
+        self.progress_bar.setValue(total_students)
+        self.status_label.setText(f"Export abgeschlossen! {exported_count} von {total_students} PDFs erstellt.")
+        
+        QMessageBox.information(self, "Export abgeschlossen", 
+                              f"Erfolgreich {exported_count} von {total_students} Schüler-PDFs erstellt.\n\nDateien gespeichert in:\n{export_path}")
+
+    def export_selected_classes(self, selected_rows, export_path: str) -> None:
+        """Exportiert ausgewählte Klassen (jeder Schüler als separate PDF)"""
+        total_exported = 0
+        
+        for row_index in selected_rows:
+            row = row_index.row()
+            class_name = self.selection_list.item(row, 0).text()
+            
+            self.status_label.setText(f"Exportiere Klasse {class_name}...")
+            QApplication.processEvents()
+            
+            # Alle Schüler dieser Klasse abrufen
+            students_in_class = self.db_manager.get_students_in_class(class_name)
+            
+            class_total = len(students_in_class)
+            self.progress_bar.setMaximum(class_total)
+            
+            for i, student in enumerate(students_in_class):
+                student_id, firstname, lastname, klass = student
+                
+                self.status_label.setText(f"Exportiere {firstname} {lastname} (Klasse {class_name})...")
+                self.progress_bar.setValue(i)
+                QApplication.processEvents()
+                
+                try:
+                    filename = self.create_student_pdf(student_id, firstname, lastname, klass, export_path)
+                    total_exported += 1
+                except Exception as e:
+                    print(f"Fehler beim Exportieren von {firstname} {lastname}: {e}")
+                    continue
+            
+            self.progress_bar.setValue(class_total)
+        
+        self.status_label.setText(f"Export abgeschlossen! {total_exported} PDFs erstellt.")
+        
+        QMessageBox.information(self, "Export abgeschlossen", 
+                              f"Erfolgreich {total_exported} Schüler-PDFs erstellt.\n\nDateien gespeichert in:\n{export_path}")
+
+    def create_student_pdf(self, student_id: int, firstname: str, lastname: str, klass: str, export_path: str) -> str:
+        """Erstellt eine PDF für einen einzelnen Schüler"""
+        # Dateinamen erstellen und Sonderzeichen ersetzen
+        safe_firstname = firstname.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        safe_lastname = lastname.replace(" ", "_").replace("/", "_").replace("\\", "_")
+        safe_klass = klass.replace(" ", "_").replace("/", "_").replace("\\", "_") if klass else "NoClass"
+        filename = f"{safe_firstname}_{safe_lastname}_{safe_klass}.pdf"
+        full_path = f"{export_path}/{filename}"
+        
+        # Alle Daten des Schülers abrufen
+        cursor = self.db_manager.conn.cursor()
+        cursor.execute(
+            "SELECT soziale_kompetenz, aktive_mitarbeit, sauberkeit, material, puenktlichkeit, kommentar "
+            "FROM students WHERE id = ?", (student_id,)
+        )
+        student_details = cursor.fetchone()
+        
+        # Arbeitstitel des Schülers abrufen
+        work_titles = self.db_manager.get_work_titles(student_id)
+        
+        # PDF erstellen
+        doc = SimpleDocTemplate(full_path, pagesize=A4,
+                               topMargin=1*cm, bottomMargin=1*cm,
+                               leftMargin=1.5*cm, rightMargin=1.5*cm)
+        styles = getSampleStyleSheet()
+        
+        # Eigene Styles definieren
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Heading1'],
+            fontSize=18,
+            leading=22,
+            alignment=1,  # Zentriert
+            spaceAfter=12
+        )
+        heading2_style = ParagraphStyle(
+            'Heading2Style',
+            parent=styles['Heading2'],
+            fontSize=14,
+            leading=18,
+            spaceBefore=6,
+            spaceAfter=6
+        )
+        heading3_style = ParagraphStyle(
+            'Heading3Style',
+            parent=styles['Heading3'],
+            fontSize=12,
+            leading=14,
+            spaceBefore=4,
+            spaceAfter=4
+        )
+        
+        elements = []
+        
+        # Titel
+        elements.append(Paragraph(f"Schülerdaten: {firstname} {lastname}, Klasse: {klass}", title_style))
+        elements.append(Spacer(1, 0.5*cm))
+        
+        # Schülerdetails als Tabelle
+        if student_details:
+            data = [
+                ["Soziale Kompetenz", student_details[0] if student_details[0] else ""],
+                ["Aktive Mitarbeit", student_details[1] if student_details[1] else ""],
+                ["Sauberkeit", student_details[2] if student_details[2] else ""],
+                ["Material", student_details[3] if student_details[3] else ""],
+                ["Pünktlichkeit", student_details[4] if student_details[4] else ""],
+                ["Kommentar", student_details[5] if student_details[5] else ""]
+            ]
+            
+            from reportlab.lib.colors import lightgrey, black, white
+            table = Table(data, colWidths=[5*cm, 11*cm])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (0,-1), lightgrey),
+                ('TEXTCOLOR', (0,0), (0,-1), black),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 10),
+                ('BOTTOMPADDING', (0,0), (-1,0), 6),
+                ('BACKGROUND', (0,1), (-1,-1), white),
+                ('GRID', (0,0), (-1,-1), 1, black)
+            ]))
+            elements.append(Paragraph("<b>Schülerdetails:</b>", heading2_style))
+            elements.append(table)
+            elements.append(Spacer(1, 0.5*cm))
+        
+        # Arbeitstitel: Pro Arbeitstitel eine eigene Tabelle
+        if work_titles:
+            elements.append(Paragraph("<b>Arbeitstitel:</b>", heading2_style))
+            for work in work_titles:
+                table_data = [
+                    ["Titel", work[1] if work[1] else ""],
+                    ["Note", work[2] if work[2] else ""],
+                    ["Konzept", work[3] if work[3] else ""],
+                    ["Ausführung", work[4] if work[4] else ""],
+                    ["Technik", work[5] if work[5] else ""],
+                    ["Selbstbeurteilung", work[6] if work[6] else ""],
+                    ["Hat mir gefallen/Nicht gefallen", work[7] if work[7] else ""],
+                    ["Kommentar", work[8] if work[8] else ""]
+                ]
+                
+                work_table = Table(table_data, colWidths=[5*cm, 11*cm])
+                work_table.setStyle(TableStyle([
+                    ('BACKGROUND', (0,0), (0,-1), lightgrey),
+                    ('TEXTCOLOR', (0,0), (0,-1), black),
+                    ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
+                    ('FONTSIZE', (0,0), (0,0), 10),
+                    ('BOTTOMPADDING', (0,0), (0,0), 6),
+                    ('BACKGROUND', (0,1), (-1,-1), white),
+                    ('GRID', (0,0), (-1,-1), 1, black),
+                    ('FONTSIZE', (0,1), (-1,-1), 8)
+                ]))
+                elements.append(Paragraph(f"<b>Arbeitstitel:</b>", heading3_style))
+                elements.append(work_table)
+                elements.append(Spacer(1, 0.3*cm))
+        
+        # PDF generieren
+        doc.build(elements)
+        return full_path
+
 # ----------------------- MainWindow -----------------------
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
@@ -2097,8 +2735,8 @@ class MainWindow(QMainWindow):
         self.export_pdf_button = QPushButton("Export als PDF")
         self.export_pdf_button.setMinimumHeight(40)
         self.export_pdf_button.setStyleSheet("background-color: #55AA55;")
-        self.export_pdf_button.clicked.connect(self.export_to_pdf)
-        self.export_pdf_button.setEnabled(False)  # Initial deaktiviert
+        self.export_pdf_button.clicked.connect(self.open_pdf_export_dialog)
+        self.export_pdf_button.setEnabled(REPORTLAB_AVAILABLE)  # Aktiviert wenn ReportLab verfügbar ist
         buttons_layout.addWidget(self.export_pdf_button)
         
         # Beenden-Button hinzufügen
@@ -2116,169 +2754,25 @@ class MainWindow(QMainWindow):
     
     def update_button_states(self) -> None:
         """Aktiviert oder deaktiviert Buttons basierend auf der Schülerauswahl"""
-        selected_rows = self.student_table.selectedItems()
-        self.export_pdf_button.setEnabled(len(selected_rows) > 0)
-        # Nur bei verfügbarer reportlab Bibliothek aktivieren
+        # PDF-Export immer verfügbar, wenn ReportLab installiert ist
         if not REPORTLAB_AVAILABLE:
             self.export_pdf_button.setEnabled(False)
             self.export_pdf_button.setToolTip("Reportlab-Bibliothek nicht verfügbar. Bitte installieren Sie 'reportlab'.")
+        else:
+            self.export_pdf_button.setEnabled(True)
     
-    def export_to_pdf(self) -> None:
-        """Exportiert die Daten des ausgewählten Schülers als PDF"""
+    def open_pdf_export_dialog(self) -> None:
+        """Öffnet den PDF-Export-Dialog"""
         if not REPORTLAB_AVAILABLE:
             QMessageBox.warning(self, "Fehler", 
-                                "Reportlab-Bibliothek nicht verfügbar. Bitte installieren Sie 'reportlab' mit dem Befehl:\npip install reportlab")
+                              "Reportlab-Bibliothek nicht verfügbar. Bitte installieren Sie 'reportlab' mit dem Befehl:\npip install reportlab")
             return
-            
-        selected_row = self.student_table.currentRow()
-        if selected_row == -1:
-            QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Schüler aus.")
-            return
-        
-        student_id = int(self.student_table.item(selected_row, 0).text())
-        firstname = self.student_table.item(selected_row, 1).text()
-        lastname = self.student_table.item(selected_row, 2).text()
-        klass = self.student_table.item(selected_row, 3).text()
-        
-        # Dateinamen erstellen und Sonderzeichen ersetzen
-        safe_firstname = firstname.replace(" ", "_").replace("/", "_").replace("\\", "_")
-        safe_lastname = lastname.replace(" ", "_").replace("/", "_").replace("\\", "_")
-        safe_klass = klass.replace(" ", "_").replace("/", "_").replace("\\", "_")
-        filename = f"{safe_firstname}_{safe_lastname}_{safe_klass}.pdf"
-        
-        # Alle Daten des Schülers abrufen
-        cursor = self.db_manager.conn.cursor()
-        cursor.execute(
-            "SELECT soziale_kompetenz, aktive_mitarbeit, sauberkeit, material, puenktlichkeit, kommentar "
-            "FROM students WHERE id = ?", (student_id,)
-        )
-        student_details = cursor.fetchone()
-        
-        # Arbeitstitel des Schülers abrufen
-        work_titles = self.db_manager.get_work_titles(student_id)
         
         try:
-            # PDF erstellen
-            doc = SimpleDocTemplate(filename, pagesize=A4,
-                                   topMargin=1*cm, bottomMargin=1*cm,
-                                   leftMargin=1.5*cm, rightMargin=1.5*cm)
-            styles = getSampleStyleSheet()
-            
-            # Eigene Styles definieren
-            title_style = ParagraphStyle(
-                'TitleStyle',
-                parent=styles['Heading1'],
-                fontSize=18,
-                leading=22,
-                alignment=1,  # Zentriert
-                spaceAfter=12
-            )
-            heading2_style = ParagraphStyle(
-                'Heading2Style',
-                parent=styles['Heading2'],
-                fontSize=14,
-                leading=18,
-                spaceBefore=6,
-                spaceAfter=6
-            )
-            heading3_style = ParagraphStyle(
-                'Heading3Style',
-                parent=styles['Heading3'],
-                fontSize=12,
-                leading=14,
-                spaceBefore=4,
-                spaceAfter=4
-            )
-            normal_style = ParagraphStyle(
-                'NormalStyle',
-                parent=styles['Normal'],
-                fontSize=10,
-                leading=12,
-                spaceAfter=3
-            )
-            
-            elements = []
-            
-            # Titel
-            elements.append(Paragraph(f"Schülerdaten: {firstname} {lastname}, Klasse: {klass}", title_style))
-            elements.append(Spacer(1, 0.5*cm))
-            
-            # Schülerdetails als Tabelle
-            if student_details:
-                data = [
-                    ["Soziale Kompetenz", student_details[0] if student_details[0] else ""],
-                    ["Aktive Mitarbeit", student_details[1] if student_details[1] else ""],
-                    ["Sauberkeit", student_details[2] if student_details[2] else ""],
-                    ["Material", student_details[3] if student_details[3] else ""],
-                    ["Pünktlichkeit", student_details[4] if student_details[4] else ""],
-                    ["Kommentar", student_details[5] if student_details[5] else ""]
-                ]
-                
-                table = Table(data, colWidths=[5*cm, 11*cm])
-                table.setStyle(TableStyle([
-                    ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-                    ('TEXTCOLOR', (0,0), (0,-1), colors.black),
-                    ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                    ('FONTSIZE', (0,0), (-1,0), 10),
-                    ('BOTTOMPADDING', (0,0), (-1,0), 6),
-                    ('BACKGROUND', (0,1), (-1,-1), colors.white),
-                    ('GRID', (0,0), (-1,-1), 1, colors.black)
-                ]))
-                elements.append(Paragraph("<b>Schülerdetails:</b>", heading2_style))
-                elements.append(table)
-                elements.append(Spacer(1, 0.5*cm))
-            
-            # Arbeitstitel: Pro Arbeitstitel eine eigene Tabelle
-            if work_titles:
-                elements.append(Paragraph("<b>Arbeitstitel:</b>", heading2_style))
-                for work in work_titles:
-                    table_data = [
-                        ["Titel", work[1] if work[1] else ""],
-                        ["Note", work[2] if work[2] else ""],
-                        ["Konzept", work[3] if work[3] else ""],
-                        ["Ausführung", work[4] if work[4] else ""],
-                        ["Technik", work[5] if work[5] else ""],
-                        ["Selbstbeurteilung", work[6] if work[6] else ""],
-                        ["Hat mir gefallen/Nicht gefallen", work[7] if work[7] else ""],
-                        ["Kommentar", work[8] if work[8] else ""]
-                    ]
-                    
-                    work_table = Table(table_data, colWidths=[5*cm, 11*cm])
-                    work_table.setStyle(TableStyle([
-                        ('BACKGROUND', (0,0), (0,-1), colors.lightgrey),
-                        ('TEXTCOLOR', (0,0), (0,-1), colors.black),
-                        ('FONTNAME', (0,0), (0,0), 'Helvetica-Bold'),
-                        ('FONTSIZE', (0,0), (0,0), 10),
-                        ('BOTTOMPADDING', (0,0), (0,0), 6),
-                        ('BACKGROUND', (0,1), (-1,-1), colors.white),
-                        ('GRID', (0,0), (-1,-1), 1, colors.black),
-                        ('FONTSIZE', (0,1), (-1,-1), 8)
-                    ]))
-                    elements.append(Paragraph(f"<b>Arbeitstitel:</b>", heading3_style))
-                    elements.append(work_table)
-                    elements.append(Spacer(1, 0.3*cm))
-            
-            # PDF generieren
-            doc.build(elements)
-            
-            # Erfolgsmeldung anzeigen
-            QMessageBox.information(self, "Erfolg", f"PDF wurde erfolgreich erstellt:\n{filename}")
-            
-            # Optional: PDF direkt öffnen
-            try:
-                if sys.platform == 'win32':
-                    os.startfile(filename)
-                elif sys.platform == 'darwin':  # macOS
-                    import subprocess
-                    subprocess.call(['open', filename])
-                else:  # Linux
-                    import subprocess
-                    subprocess.call(['xdg-open', filename])
-            except Exception as e:
-                print(f"Fehler beim Öffnen der PDF: {e}")
-                
+            dialog = PDFExportDialog(self.db_manager)
+            dialog.exec()
         except Exception as e:
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Erstellen der PDF:\n{str(e)}")
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Öffnen des PDF-Export-Dialogs:\n{str(e)}")
 
     def add_student(self) -> None:
         firstname = self.firstname_edit.text().strip()
