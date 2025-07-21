@@ -851,6 +851,9 @@ class ClassManagementDialog(QDialog):
         self.db_manager: DatabaseManager = db_manager
         self.setWindowTitle("Klassen bearbeiten")
         
+        # Maximize-Button im rechten oberen Eck hinzufügen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        
         # Dynamische Größenanpassung basierend auf Bildschirmauflösung und DPI
         self._setup_dynamic_sizing()
         
@@ -919,7 +922,8 @@ class ClassManagementDialog(QDialog):
         
         # Größen setzen
         self.resize(target_width, target_height)
-        self.setMinimumSize(min_width, min_height)
+        # Mindestgröße entspricht der aktuellen Fenstergröße
+        self.setMinimumSize(target_width, target_height)
         
         # Dialog zentrieren
         x = (screen_width - target_width) // 2
@@ -1676,8 +1680,16 @@ class StudentDetailDialog(QDialog):
         self.student_data: Tuple = student_data
         self.db_manager: DatabaseManager = db_manager
         self.setWindowTitle(f"Schülerdetails: {student_data[1]} {student_data[2]}")
+        
+        # Maximize-Button im rechten oberen Eck hinzufügen
+        self.setWindowFlags(self.windowFlags() | Qt.WindowType.WindowMaximizeButtonHint)
+        
         # Größeres Dialog-Fenster für mehr Platz für die Arbeitstitel
-        self.setMinimumSize(1000, 1000)
+        initial_size = (1000, 1000)
+        self.resize(*initial_size)
+        # Mindestgröße entspricht der aktuellen Fenstergröße
+        self.setMinimumSize(*initial_size)
+        
         self.setup_ui()
         self.load_work_titles()
 
