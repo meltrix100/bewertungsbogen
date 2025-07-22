@@ -927,8 +927,11 @@ class ClassManagementDialog(QDialog):
         self.move(x, y)
 
     def setup_ui(self) -> None:
-        # Hauptlayout für den gesamten Dialog
-        main_layout = QVBoxLayout()
+        # Erstelle ein zentrales Widget für den gesamten ScrollArea-Inhalt
+        central_widget = QWidget()
+        
+        # Hauptlayout für den gesamten Dialog-Inhalt
+        main_layout = QVBoxLayout(central_widget)
         
         # Dynamische Schriftgröße basierend auf Bildschirmgröße
         font = self._get_scaled_font()
@@ -977,7 +980,7 @@ class ClassManagementDialog(QDialog):
         overview_layout.addWidget(self.class_overview_table)
         
         # ====================================================
-        # BEREICH 2: Klasse umbenennen (mit ScrollArea)
+        # BEREICH 2: Klasse umbenennen (ohne ScrollArea)
         # ====================================================
         assignment_group = QGroupBox("Klasse umbenennen")
         assignment_group.setStyleSheet(f"""
@@ -997,19 +1000,8 @@ class ClassManagementDialog(QDialog):
             }}
         """)
         
-        # Hauptlayout für die Klasse-umbenennen-GroupBox
-        assignment_main_layout = QVBoxLayout(assignment_group)
-        
-        # ScrollArea für die Umbenennen-Eingabefelder
-        assignment_scroll_area = QScrollArea()
-        assignment_scroll_area.setWidgetResizable(True)
-        assignment_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        assignment_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        assignment_scroll_area.setMinimumHeight(element_heights['group_min'])
-        
-        # Widget für den ScrollArea-Inhalt
-        assignment_content_widget = QWidget()
-        assignment_layout = QVBoxLayout(assignment_content_widget)
+        # Direktes Layout für die Klasse-umbenennen-GroupBox
+        assignment_layout = QVBoxLayout(assignment_group)
         
         # Quellklasse auswählen
         source_layout = QHBoxLayout()
@@ -1049,21 +1041,17 @@ class ClassManagementDialog(QDialog):
         self.preview_label.setMinimumHeight(element_heights['preview'])  # Mindesthöhe für mehrzeiligen Text
         assignment_layout.addWidget(self.preview_label)
         
-        # ScrollArea-Inhalt setzen
-        assignment_scroll_area.setWidget(assignment_content_widget)
-        assignment_main_layout.addWidget(assignment_scroll_area)
-        
-        # Button für Klasse umbenennen außerhalb der ScrollArea
+        # Button für Klasse umbenennen
         self.rename_class_button = QPushButton("Klasse umbenennen")
         self.rename_class_button.setMinimumHeight(element_heights['button'])
         self.rename_class_button.setFont(font)
         self.rename_class_button.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.rename_class_button.clicked.connect(self.perform_mass_assignment)
         self.rename_class_button.setEnabled(False)
-        assignment_main_layout.addWidget(self.rename_class_button)
+        assignment_layout.addWidget(self.rename_class_button)
         
         # ====================================================
-        # BEREICH 3: Klasse löschen (mit ScrollArea)
+        # BEREICH 3: Klasse löschen (ohne ScrollArea)
         # ====================================================
         delete_group = QGroupBox("Klasse löschen")
         delete_group.setStyleSheet(f"""
@@ -1083,19 +1071,8 @@ class ClassManagementDialog(QDialog):
             }}
         """)
         
-        # Hauptlayout für die Klasse-löschen-GroupBox
-        delete_main_layout = QVBoxLayout(delete_group)
-        
-        # ScrollArea für die Lösch-Eingabefelder
-        delete_scroll_area = QScrollArea()
-        delete_scroll_area.setWidgetResizable(True)
-        delete_scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        delete_scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        delete_scroll_area.setMinimumHeight(element_heights['group_min'])
-        
-        # Widget für den ScrollArea-Inhalt
-        delete_content_widget = QWidget()
-        delete_layout = QVBoxLayout(delete_content_widget)
+        # Direktes Layout für die Klasse-löschen-GroupBox
+        delete_layout = QVBoxLayout(delete_group)
         
         # Warnung
         delete_warning_label = QLabel("⚠️ WARNUNG: Das Löschen einer Klasse entfernt alle Schüler und deren Arbeitstitel permanent!")
@@ -1127,24 +1104,37 @@ class ClassManagementDialog(QDialog):
         self.delete_preview_label.setMinimumHeight(element_heights['preview'])
         delete_layout.addWidget(self.delete_preview_label)
         
-        # ScrollArea-Inhalt setzen
-        delete_scroll_area.setWidget(delete_content_widget)
-        delete_main_layout.addWidget(delete_scroll_area)
-        
-        # Button für Klasse löschen außerhalb der ScrollArea
+        # Button für Klasse löschen
         self.delete_class_button = QPushButton("Klasse löschen")
         self.delete_class_button.setMinimumHeight(element_heights['button'])
         self.delete_class_button.setFont(font)
         self.delete_class_button.setStyleSheet("background-color: #FF5722; color: white; font-weight: bold;")
         self.delete_class_button.clicked.connect(self.perform_class_deletion)
         self.delete_class_button.setEnabled(False)
-        delete_main_layout.addWidget(self.delete_class_button)
+        delete_layout.addWidget(self.delete_class_button)
         
         # ====================================================
         # BEREICH 4: Dialog-Buttons
         # ====================================================
-        buttons_widget = QWidget()
-        buttons_layout = QHBoxLayout(buttons_widget)
+        buttons_group = QGroupBox("Aktionen")
+        buttons_group.setStyleSheet(f"""
+            QGroupBox {{
+                font-weight: bold;
+                font-size: {font.pointSize() + 2}px;
+                border: 2px solid #607D8B;
+                border-radius: 8px;
+                padding-top: 15px;
+                margin-top: 10px;
+            }}
+            QGroupBox::title {{
+                subcontrol-origin: margin;
+                left: 10px;
+                padding: 0 5px;
+                background-color: #ECEFF1;
+            }}
+        """)
+        
+        buttons_layout = QHBoxLayout(buttons_group)
         
         # Aktualisieren-Button
         self.refresh_button = QPushButton("Übersicht aktualisieren")
@@ -1161,44 +1151,26 @@ class ClassManagementDialog(QDialog):
         self.close_button.clicked.connect(self.close)
         buttons_layout.addWidget(self.close_button)
         
-        # ====================================================
-        # QSplitter für verschiebbare Bereiche erstellen
-        # ====================================================
-        # Hauptsplitter (vertikal) für die drei Hauptbereiche
-        main_splitter = QSplitter(Qt.Orientation.Vertical)
-        main_splitter.addWidget(overview_group)
+        # Alle Bereiche direkt zum Hauptlayout hinzufügen (ohne Splitter)
+        main_layout.addWidget(overview_group)
+        main_layout.addWidget(assignment_group)
+        main_layout.addWidget(delete_group)
+        main_layout.addWidget(buttons_group)
         
-        # Untersplitter für Umbenennen und Löschen (vertikal)
-        operations_splitter = QSplitter(Qt.Orientation.Vertical)
-        operations_splitter.addWidget(assignment_group)
-        operations_splitter.addWidget(delete_group)
+        # QScrollArea für den gesamten Dialog erstellen
+        dialog_scroll = QScrollArea()
+        dialog_scroll.setWidget(central_widget)
+        dialog_scroll.setWidgetResizable(True)
+        dialog_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        dialog_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        # Dynamische Anfangsgrößen basierend auf verfügbarem Platz
-        available_height = self.height() - element_heights['button_small'] - 60  # Platz für Buttons und Ränder
-        overview_height = int(available_height * 0.4)
-        operations_height = int(available_height * 0.6)
-        
-        # Verhältnis für Umbenennen/Löschen setzen (50/50)
-        operations_splitter.setSizes([operations_height // 2, operations_height // 2])
-        operations_splitter.setChildrenCollapsible(False)
-        
-        main_splitter.addWidget(operations_splitter)
-        
-        # Anfangsverhältnis der Hauptbereiche setzen
-        main_splitter.setSizes([overview_height, operations_height])
-        main_splitter.setChildrenCollapsible(False)
-        
-        # Dynamische Mindestgrößen für die Bereiche festlegen
-        overview_group.setMinimumHeight(element_heights['group_min'])
-        assignment_group.setMinimumHeight(element_heights['group_min'])
-        delete_group.setMinimumHeight(element_heights['group_min'])
-        
-        # Hauptlayout zusammensetzen
-        main_layout.addWidget(main_splitter)
-        main_layout.addWidget(buttons_widget)
+        # Dialog-Layout erstellen und ScrollArea hinzufügen
+        dialog_layout = QVBoxLayout()
+        dialog_layout.addWidget(dialog_scroll)
+        dialog_layout.setContentsMargins(0, 0, 0, 0)  # Keine zusätzlichen Ränder
         
         # Gesamtlayout für den Dialog anwenden
-        self.setLayout(main_layout)
+        self.setLayout(dialog_layout)
     
     def _get_scaled_font(self) -> QFont:
         """Berechnet eine skalierte Schriftgröße basierend auf Bildschirmgröße und DPI"""
