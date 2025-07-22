@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
     QDialog, QTextEdit, QGroupBox, QComboBox, QFileDialog, QProgressBar,
-    QScrollArea, QSplitter
+    QScrollArea, QSplitter, QInputDialog
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -2711,6 +2711,9 @@ class MainWindow(QMainWindow):
         self.student_table.setHorizontalHeaderLabels(["", "Vorname", "Nachname", "Klasse"])
         self.student_table.cellDoubleClicked.connect(self.open_student_details)
         
+        # Tastatur-Event für F2-Taste hinzufügen
+        self.student_table.keyPressEvent = self.table_key_press_event
+        
         # ID-Spalte komplett ausblenden
         self.student_table.setColumnHidden(0, True)
         
@@ -2731,6 +2734,11 @@ class MainWindow(QMainWindow):
             header.setSectionResizeMode(i, header.ResizeMode.Stretch)
         
         layout.addWidget(self.student_table)
+        
+        # Hinweis für Benutzer
+        hint_label = QLabel("💡 Tipp: Wählen Sie eine Zelle aus und drücken Sie F2 zum Bearbeiten von Vorname, Nachname oder Klasse")
+        hint_label.setStyleSheet("color: #666; font-size: 10px; padding: 5px;")
+        layout.addWidget(hint_label)
 
         # Button-Layouts für Aktionen unter der Schülertabelle
         buttons_layout = QHBoxLayout()
@@ -2784,6 +2792,97 @@ class MainWindow(QMainWindow):
             self.export_pdf_button.setToolTip("Reportlab-Bibliothek nicht verfügbar. Bitte installieren Sie 'reportlab'.")
         else:
             self.export_pdf_button.setEnabled(True)
+    
+    def table_key_press_event(self, event) -> None:
+        """Behandelt Tastatur-Events für die Tabelle"""
+        try:
+            # F2-Taste zum Bearbeiten
+            if event.key() == Qt.Key.Key_F2:
+                current_row = self.student_table.currentRow()
+                current_column = self.student_table.currentColumn()
+                
+                if current_row >= 0 and current_column in [1, 2, 3]:
+                    self.edit_student_cell_simple(current_row, current_column)
+                    return
+            
+            # Für alle anderen Tasten die normale Behandlung
+            QTableWidget.keyPressEvent(self.student_table, event)
+            
+        except Exception as e:
+            print(f"Fehler bei Tastatur-Event: {e}")
+            # Fallback zur normalen Behandlung
+            QTableWidget.keyPressEvent(self.student_table, event)
+    
+    def edit_student_cell_simple(self, row: int, column: int) -> None:
+        """Einfache Zellbearbeitung mit F2-Taste"""
+        try:
+            # Prüfen ob die Zeile und Spalte gültig sind
+            if row < 0 or row >= self.student_table.rowCount():
+                return
+            
+            if column < 1 or column > 3:
+                return
+            
+            # Aktuellen Wert abrufen
+            current_item = self.student_table.item(row, column)
+            if current_item is None:
+                return
+            
+            current_value = current_item.text()
+            
+            # Spaltenname für Dialog-Titel bestimmen
+            column_names = ["", "Vorname", "Nachname", "Klasse"]
+            column_name = column_names[column]
+            
+            # Input-Dialog zum Bearbeiten des Wertes
+            new_value, ok = QInputDialog.getText(
+                self, 
+                f"{column_name} bearbeiten", 
+                f"Neuer Wert für {column_name}:",
+                QLineEdit.EchoMode.Normal,
+                current_value
+            )
+            
+            if ok and new_value.strip():
+                # Bei Klasse: Automatisch in Großbuchstaben umwandeln
+                if column == 3:  # Klasse
+                    new_value = new_value.strip().upper()
+                else:
+                    new_value = new_value.strip()
+                
+                # Schüler-ID aus der versteckten Spalte abrufen
+                id_item = self.student_table.item(row, 0)
+                if id_item is None:
+                    QMessageBox.critical(self, "Fehler", "Schüler-ID konnte nicht gefunden werden.")
+                    return
+                
+                student_id = int(id_item.text())
+                
+                # Datenbankfeld bestimmen und aktualisieren
+                field_mapping = {1: "firstname", 2: "lastname", 3: "class"}
+                field_name = field_mapping[column]
+                
+                # Datenbank aktualisieren
+                cursor = self.db_manager.conn.cursor()
+                cursor.execute(f"UPDATE students SET {field_name} = ? WHERE id = ?", 
+                             (new_value, student_id))
+                self.db_manager.conn.commit()
+                
+                # Tabellenzelle aktualisieren
+                current_item.setText(new_value)
+                
+                # Klassenfilter aktualisieren, falls Klasse geändert wurde
+                if column == 3:  # Klasse wurde geändert
+                    self.update_class_filter()
+                
+                # Kurze Erfolgsbestätigung
+                print(f"[OK] {column_name} wurde erfolgreich zu '{new_value}' geaendert.")
+                
+        except Exception as e:
+            print(f"Fehler beim Bearbeiten: {e}")
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Bearbeiten:\n{str(e)}")
+            # Bei Fehler Daten neu laden
+            self.load_students()
     
     def open_pdf_export_dialog(self) -> None:
         """Öffnet den PDF-Export-Dialog"""
