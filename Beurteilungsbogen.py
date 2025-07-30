@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QLineEdit, QPushButton, QMessageBox, QTableWidget, QTableWidgetItem,
     QDialog, QTextEdit, QGroupBox, QComboBox, QFileDialog, QProgressBar,
-    QScrollArea, QSplitter, QInputDialog
+    QScrollArea, QSplitter, QInputDialog, QMenu
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -2711,8 +2711,9 @@ class MainWindow(QMainWindow):
         self.student_table.setHorizontalHeaderLabels(["", "Vorname", "Nachname", "Klasse"])
         self.student_table.cellDoubleClicked.connect(self.open_student_details)
         
-        # Tastatur-Event für F2-Taste hinzufügen
-        self.student_table.keyPressEvent = self.table_key_press_event
+        # Kontextmenü für Rechtsklick hinzufügen
+        self.student_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.student_table.customContextMenuRequested.connect(self.show_context_menu)
         
         # ID-Spalte komplett ausblenden
         self.student_table.setColumnHidden(0, True)
@@ -2736,7 +2737,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(self.student_table)
         
         # Hinweis für Benutzer
-        hint_label = QLabel("💡 Tipp: Wählen Sie eine Zelle aus und drücken Sie F2 zum Bearbeiten von Vorname, Nachname oder Klasse")
+        hint_label = QLabel("💡 Tipp: Rechtsklick auf eine Zelle zum Bearbeiten von Vorname, Nachname oder Klasse")
         hint_label.setStyleSheet("color: #666; font-size: 10px; padding: 5px;")
         layout.addWidget(hint_label)
 
@@ -2793,28 +2794,50 @@ class MainWindow(QMainWindow):
         else:
             self.export_pdf_button.setEnabled(True)
     
-    def table_key_press_event(self, event) -> None:
-        """Behandelt Tastatur-Events für die Tabelle"""
+    def show_context_menu(self, position) -> None:
+        """Zeigt ein Kontextmenü bei Rechtsklick auf die Tabelle"""
         try:
-            # F2-Taste zum Bearbeiten
-            if event.key() == Qt.Key.Key_F2:
-                current_row = self.student_table.currentRow()
-                current_column = self.student_table.currentColumn()
-                
-                if current_row >= 0 and current_column in [1, 2, 3]:
-                    self.edit_student_cell_simple(current_row, current_column)
-                    return
+            # Prüfen ob auf einer gültigen Zelle geklickt wurde
+            item = self.student_table.itemAt(position)
+            if item is None:
+                return
             
-            # Für alle anderen Tasten die normale Behandlung
-            QTableWidget.keyPressEvent(self.student_table, event)
+            row = item.row()
+            column = item.column()
+            
+            # Nur für editierbare Spalten (Vorname, Nachname, Klasse)
+            if column not in [1, 2, 3]:
+                return
+            
+            # Kontextmenü erstellen
+            context_menu = QMenu(self)
+            
+            # Spaltenname bestimmen
+            column_names = ["", "Vorname", "Nachname", "Klasse"]
+            column_name = column_names[column]
+            
+            # Bearbeiten-Aktion hinzufügen
+            edit_action = context_menu.addAction(f"{column_name} bearbeiten")
+            edit_action.triggered.connect(lambda: self.edit_student_cell_simple(row, column))
+            
+            # Separator
+            context_menu.addSeparator()
+            
+            # Zusätzliche Aktionen
+            details_action = context_menu.addAction("Schülerdetails öffnen")
+            details_action.triggered.connect(lambda: self.open_student_details(row, column))
+            
+            delete_action = context_menu.addAction("🗑️ Schüler löschen")
+            delete_action.triggered.connect(self.delete_student)
+            
+            # Menü an der Mausposition anzeigen
+            context_menu.exec(self.student_table.mapToGlobal(position))
             
         except Exception as e:
-            print(f"Fehler bei Tastatur-Event: {e}")
-            # Fallback zur normalen Behandlung
-            QTableWidget.keyPressEvent(self.student_table, event)
+            print(f"Fehler beim Anzeigen des Kontextmenüs: {e}")
     
     def edit_student_cell_simple(self, row: int, column: int) -> None:
-        """Einfache Zellbearbeitung mit F2-Taste"""
+        """Einfache Zellbearbeitung über Kontextmenü"""
         try:
             # Prüfen ob die Zeile und Spalte gültig sind
             if row < 0 or row >= self.student_table.rowCount():
