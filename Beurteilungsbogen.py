@@ -2805,57 +2805,87 @@ class MainWindow(QMainWindow):
             row = item.row()
             column = item.column()
             
+            # Sicherheitsprüfung für Zeilen- und Spaltenbereich
+            if row < 0 or row >= self.student_table.rowCount():
+                return
+            if column < 0 or column >= self.student_table.columnCount():
+                return
+            
             # Nur für editierbare Spalten (Vorname, Nachname, Klasse)
             if column not in [1, 2, 3]:
                 return
             
+            # Prüfen ob die Tabellenzelle tatsächlich existiert
+            if not self.student_table.item(row, 0):  # ID-Spalte muss existieren
+                return
+            
             # Kontextmenü erstellen
             context_menu = QMenu(self)
+            if not context_menu:
+                return
             
             # Spaltenname bestimmen
             column_names = ["", "Vorname", "Nachname", "Klasse"]
-            column_name = column_names[column]
+            column_name = column_names[column] if column < len(column_names) else "Unbekannt"
             
             # Bearbeiten-Aktion hinzufügen
-            edit_action = context_menu.addAction(f"{column_name} bearbeiten")
-            edit_action.triggered.connect(lambda: self.edit_student_cell_simple(row, column))
+            edit_action = context_menu.addAction(f"✏️ {column_name} bearbeiten")
+            if edit_action:
+                edit_action.triggered.connect(lambda: self.edit_student_cell_simple(row, column))
             
             # Separator
             context_menu.addSeparator()
             
             # Zusätzliche Aktionen
-            details_action = context_menu.addAction("Schülerdetails öffnen")
-            details_action.triggered.connect(lambda: self.open_student_details(row, column))
+            details_action = context_menu.addAction("📄 Schülerdetails öffnen")
+            if details_action:
+                details_action.triggered.connect(lambda: self.open_student_details(row, column))
             
             delete_action = context_menu.addAction("🗑️ Schüler löschen")
-            delete_action.triggered.connect(self.delete_student)
+            if delete_action:
+                delete_action.triggered.connect(self.delete_student)
             
             # Menü an der Mausposition anzeigen
-            context_menu.exec(self.student_table.mapToGlobal(position))
+            global_pos = self.student_table.mapToGlobal(position)
+            if global_pos:
+                context_menu.exec(global_pos)
             
+        except AttributeError as e:
+            print(f"Fehler beim Zugriff auf Tabellenelement: {e}")
+        except IndexError as e:
+            print(f"Ungültiger Index beim Kontextmenü: {e}")
         except Exception as e:
-            print(f"Fehler beim Anzeigen des Kontextmenüs: {e}")
+            print(f"Unerwarteter Fehler beim Anzeigen des Kontextmenüs: {e}")
+            QMessageBox.warning(self, "Warnung", f"Fehler beim Anzeigen des Kontextmenüs:\n{str(e)}")
     
     def edit_student_cell_simple(self, row: int, column: int) -> None:
         """Einfache Zellbearbeitung über Kontextmenü"""
         try:
-            # Prüfen ob die Zeile und Spalte gültig sind
+            # Umfassende Eingabevalidierung
             if row < 0 or row >= self.student_table.rowCount():
+                QMessageBox.warning(self, "Fehler", f"Ungültige Zeile: {row}")
                 return
             
             if column < 1 or column > 3:
+                QMessageBox.warning(self, "Fehler", f"Spalte kann nicht bearbeitet werden: {column}")
+                return
+            
+            # Prüfen ob die Datenbank verfügbar ist
+            if not self.db_manager or not self.db_manager.conn:
+                QMessageBox.critical(self, "Datenbankfehler", "Datenbankverbindung nicht verfügbar.")
                 return
             
             # Aktuellen Wert abrufen
             current_item = self.student_table.item(row, column)
             if current_item is None:
+                QMessageBox.warning(self, "Fehler", "Keine Daten in der ausgewählten Zelle gefunden.")
                 return
             
             current_value = current_item.text()
             
             # Spaltenname für Dialog-Titel bestimmen
             column_names = ["", "Vorname", "Nachname", "Klasse"]
-            column_name = column_names[column]
+            column_name = column_names[column] if column < len(column_names) else "Unbekannt"
             
             # Input-Dialog zum Bearbeiten des Wertes
             new_value, ok = QInputDialog.getText(
@@ -2866,29 +2896,74 @@ class MainWindow(QMainWindow):
                 current_value
             )
             
-            if ok and new_value.strip():
-                # Bei Klasse: Automatisch in Großbuchstaben umwandeln
-                if column == 3:  # Klasse
-                    new_value = new_value.strip().upper()
-                else:
-                    new_value = new_value.strip()
+            if not ok:  # Benutzer hat abgebrochen
+                return
                 
-                # Schüler-ID aus der versteckten Spalte abrufen
-                id_item = self.student_table.item(row, 0)
-                if id_item is None:
-                    QMessageBox.critical(self, "Fehler", "Schüler-ID konnte nicht gefunden werden.")
+            # Eingabevalidierung
+            if not new_value or not new_value.strip():
+                QMessageBox.warning(self, "Eingabefehler", f"{column_name} darf nicht leer sein.")
+                return
+            
+            # Spezifische Validierung je nach Feld
+            new_value = new_value.strip()
+            if column == 3:  # Klasse
+                new_value = new_value.upper()
+                # Klassenname-Validierung (z.B. keine Sonderzeichen außer Zahlen und Buchstaben)
+                import re
+                if not re.match(r'^[A-Z0-9]+$', new_value):
+                    QMessageBox.warning(self, "Eingabefehler", 
+                                      "Klassenname darf nur Buchstaben und Zahlen enthalten.")
+                    return
+            elif column in [1, 2]:  # Vor- oder Nachname
+                # Namen-Validierung (erlaubt Buchstaben, Leerzeichen, Bindestriche)
+                import re
+                if not re.match(r'^[A-Za-zÄÖÜäöüß\s\-]+$', new_value):
+                    QMessageBox.warning(self, "Eingabefehler", 
+                                      "Name darf nur Buchstaben, Leerzeichen und Bindestriche enthalten.")
+                    return
+            
+            # Prüfen ob der Wert sich tatsächlich geändert hat
+            if new_value == current_value:
+                return  # Keine Änderung
+            
+            # Schüler-ID aus der versteckten Spalte abrufen
+            id_item = self.student_table.item(row, 0)
+            if id_item is None:
+                QMessageBox.critical(self, "Fehler", "Schüler-ID konnte nicht gefunden werden.")
+                return
+            
+            try:
+                student_id = int(id_item.text())
+            except (ValueError, TypeError) as e:
+                QMessageBox.critical(self, "Fehler", f"Ungültige Schüler-ID: {id_item.text()}")
+                return
+            
+            # Datenbankfeld bestimmen und aktualisieren
+            field_mapping = {1: "firstname", 2: "lastname", 3: "class"}
+            field_name = field_mapping.get(column)
+            if not field_name:
+                QMessageBox.critical(self, "Fehler", f"Unbekanntes Feld für Spalte {column}")
+                return
+            
+            # Datenbank-Transaktion
+            try:
+                cursor = self.db_manager.conn.cursor()
+                
+                # Prüfen ob der Schüler noch existiert
+                cursor.execute("SELECT COUNT(*) FROM students WHERE id = ?", (student_id,))
+                if cursor.fetchone()[0] == 0:
+                    QMessageBox.critical(self, "Fehler", "Schüler existiert nicht mehr in der Datenbank.")
+                    self.load_students()  # Tabelle aktualisieren
                     return
                 
-                student_id = int(id_item.text())
-                
-                # Datenbankfeld bestimmen und aktualisieren
-                field_mapping = {1: "firstname", 2: "lastname", 3: "class"}
-                field_name = field_mapping[column]
-                
-                # Datenbank aktualisieren
-                cursor = self.db_manager.conn.cursor()
+                # Update durchführen
                 cursor.execute(f"UPDATE students SET {field_name} = ? WHERE id = ?", 
                              (new_value, student_id))
+                
+                if cursor.rowcount == 0:
+                    QMessageBox.warning(self, "Warnung", "Keine Änderungen in der Datenbank vorgenommen.")
+                    return
+                
                 self.db_manager.conn.commit()
                 
                 # Tabellenzelle aktualisieren
@@ -2899,11 +2974,29 @@ class MainWindow(QMainWindow):
                     self.update_class_filter()
                 
                 # Kurze Erfolgsbestätigung
-                print(f"[OK] {column_name} wurde erfolgreich zu '{new_value}' geaendert.")
+                print(f"[OK] {column_name} wurde erfolgreich zu '{new_value}' geändert.")
                 
+            except sqlite3.IntegrityError as e:
+                QMessageBox.critical(self, "Datenbankfehler", 
+                                   f"Integritätsfehler: {str(e)}\nMöglicherweise existiert bereits ein Schüler mit diesen Daten.")
+                self.db_manager.conn.rollback()
+            except sqlite3.OperationalError as e:
+                QMessageBox.critical(self, "Datenbankfehler", 
+                                   f"Datenbankoperationsfehler: {str(e)}")
+                self.db_manager.conn.rollback()
+                
+        except ImportError:
+            QMessageBox.critical(self, "Fehler", "Regex-Modul konnte nicht importiert werden.")
+        except sqlite3.Error as e:
+            QMessageBox.critical(self, "Datenbankfehler", f"Datenbankfehler beim Bearbeiten:\n{str(e)}")
+            try:
+                self.db_manager.conn.rollback()
+            except:
+                pass
+            # Bei Datenbankfehler Daten neu laden
+            self.load_students()
         except Exception as e:
-            print(f"Fehler beim Bearbeiten: {e}")
-            QMessageBox.critical(self, "Fehler", f"Fehler beim Bearbeiten:\n{str(e)}")
+            QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Bearbeiten:\n{str(e)}")
             # Bei Fehler Daten neu laden
             self.load_students()
     
@@ -3067,13 +3160,41 @@ class MainWindow(QMainWindow):
 
     def delete_student(self) -> None:
         try:
+            # Prüfung der Datenbankverbindung
+            if not self.db_manager or not self.db_manager.conn:
+                QMessageBox.critical(self, "Datenbankfehler", "Datenbankverbindung nicht verfügbar.")
+                return
+            
             selected_row = self.student_table.currentRow()
             if selected_row == -1:
-                QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Schüler aus.")
+                QMessageBox.warning(self, "Warnung", "Bitte wählen Sie einen Schüler aus der Tabelle aus.")
+                return
+            
+            # Überprüfen ob die Zeile noch gültig ist
+            if selected_row >= self.student_table.rowCount():
+                QMessageBox.warning(self, "Warnung", "Die ausgewählte Zeile ist nicht mehr gültig.")
+                self.load_students()
+                return
+            
+            # Schülerdaten validieren
+            name_item_1 = self.student_table.item(selected_row, 1)
+            name_item_2 = self.student_table.item(selected_row, 2)
+            id_item = self.student_table.item(selected_row, 0)
+            
+            if not all([name_item_1, name_item_2, id_item]):
+                QMessageBox.critical(self, "Fehler", "Schülerdaten sind unvollständig.")
+                self.load_students()
+                return
+            
+            try:
+                student_id = int(id_item.text())
+            except (ValueError, TypeError):
+                QMessageBox.critical(self, "Fehler", "Ungültige Schüler-ID gefunden.")
+                self.load_students()
                 return
             
             # Bestätigungsdialog
-            student_name = f"{self.student_table.item(selected_row, 1).text()} {self.student_table.item(selected_row, 2).text()}"
+            student_name = f"{name_item_1.text()} {name_item_2.text()}"
             reply = QMessageBox.question(
                 self, 'Schüler löschen',
                 f"Möchten Sie den Schüler '{student_name}' wirklich löschen?\n\n"
@@ -3084,17 +3205,35 @@ class MainWindow(QMainWindow):
             )
             
             if reply == QMessageBox.StandardButton.Yes:
-                student_id = int(self.student_table.item(selected_row, 0).text())
-                self.db_manager.delete_student(student_id)
-                self.load_students()
-                QMessageBox.information(self, "Erfolg", f"Schüler '{student_name}' wurde erfolgreich gelöscht.")
+                # Prüfen ob Schüler noch in der Datenbank existiert
+                cursor = self.db_manager.conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM students WHERE id = ?", (student_id,))
+                if cursor.fetchone()[0] == 0:
+                    QMessageBox.warning(self, "Warnung", 
+                                      f"Schüler '{student_name}' existiert bereits nicht mehr in der Datenbank.")
+                    self.load_students()
+                    return
                 
-        except ValueError as e:
-            QMessageBox.critical(self, "Fehler", f"Ungültige Schüler-ID:\n{str(e)}")
+                # Löschen durchführen
+                try:
+                    self.db_manager.delete_student(student_id)
+                    self.load_students()
+                    QMessageBox.information(self, "Erfolg", 
+                                          f"Schüler '{student_name}' wurde erfolgreich gelöscht.")
+                except Exception as delete_error:
+                    QMessageBox.critical(self, "Löschfehler", 
+                                       f"Fehler beim Löschen von '{student_name}':\n{str(delete_error)}")
+                    self.load_students()  # Tabelle trotzdem aktualisieren
+                
+        except AttributeError as e:
+            QMessageBox.critical(self, "Fehler", f"Fehler beim Zugriff auf Tabellendaten:\n{str(e)}")
+            self.load_students()
         except sqlite3.Error as e:
-            QMessageBox.critical(self, "Datenbankfehler", f"Fehler beim Löschen des Schülers:\n{str(e)}")
+            QMessageBox.critical(self, "Datenbankfehler", f"Datenbankfehler beim Löschen:\n{str(e)}")
+            self.load_students()
         except Exception as e:
             QMessageBox.critical(self, "Fehler", f"Unerwarteter Fehler beim Löschen:\n{str(e)}")
+            self.load_students()
 
     def open_student_details(self, row: int, column: int) -> None:
         try:
